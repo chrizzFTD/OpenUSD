@@ -30,6 +30,7 @@
 #include <cstdint>
 #include <new>
 #include <structmember.h>
+#include <algorithm>
 
 namespace PXR_BOOST_NAMESPACE { namespace python {
 
