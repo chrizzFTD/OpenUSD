@@ -25,4 +25,6 @@ pxr_library(usdLightField
 
     DOXYGEN_FILES
         overview.dox
+
+    DISABLE_PRECOMPILED_HEADERS
 )
