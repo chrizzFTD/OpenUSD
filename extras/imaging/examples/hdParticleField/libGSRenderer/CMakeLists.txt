@@ -8,6 +8,8 @@ set(SOURCES
 
 add_library(GSRenderer SHARED ${SOURCES})
 
+set_target_properties(GSRenderer PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+
 target_link_libraries(GSRenderer PUBLIC
         Imath::Imath
         ${OIIO_LIBRARIES}
