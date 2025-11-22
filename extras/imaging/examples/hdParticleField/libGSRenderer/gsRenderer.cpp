@@ -46,7 +46,7 @@ class ImageBufCollection {
 
     void initIterators(ROI region) {
         if (_colorBuf) {
-            _colorPIt = std::make_unique<ImageBuf::Iterator<u_char>>(
+            _colorPIt = std::make_unique<ImageBuf::Iterator<unsigned char>>(
                 *_colorBuf, region);
             _validPIt = _colorPIt.get();
         }
@@ -109,7 +109,7 @@ class ImageBufCollection {
     ImageBuf* _primIDBuf{nullptr};
 
     ImageBuf::IteratorBase* _validPIt{nullptr};
-    std::unique_ptr<ImageBuf::Iterator<u_char>> _colorPIt{nullptr};
+    std::unique_ptr<ImageBuf::Iterator<unsigned char>> _colorPIt{nullptr};
     std::unique_ptr<ImageBuf::Iterator<float>> _depthPIt{nullptr};
     std::unique_ptr<ImageBuf::Iterator<int>> _primIDPIt{nullptr};
 };
