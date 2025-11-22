@@ -36,5 +36,7 @@ pxr_plugin(hdParticleField
 
         RESOURCE_FILES
         plugInfo.json
+
+        DISABLE_PRECOMPILED_HEADERS
 )
 
