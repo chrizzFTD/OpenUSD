@@ -867,7 +867,7 @@ function(_pxr_target_link_libraries NAME)
         # If we use any internal libraries then link against the
         # monolithic library instead.
         if(internal)
-            if(BUILD_SHARED_LIBS)
+            if(BUILD_SHARED_LIBS AND NOT (EMSCRIPTEN AND PXR_BUILD_PYODIDE))
                 set(internal usd_m)
             else()
                 # If linking against the static monolithic library

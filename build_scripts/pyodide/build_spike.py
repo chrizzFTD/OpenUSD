@@ -108,8 +108,10 @@ def build_onetbb(onetbb_src: pathlib.Path, install_dir: pathlib.Path, env: dict)
         print(f"oneTBB already built at {install_dir}")
         return
 
-    # pthread is required by USD wasm builds; pyodide uses the same port.
-    cxx_flags = "-pthread -fwasm-exceptions -sSUPPORT_LONGJMP=wasm"
+    # Pyodide/pyemscripten ABI forbids -pthread on SIDE_MODULE wheels (see
+    # https://pyodide.org/en/stable/development/abi/flags.html). USD wasm CI
+    # uses -pthread, but the Pyodide path must not.
+    cxx_flags = "-fwasm-exceptions -sSUPPORT_LONGJMP=wasm -sUSE_PTHREADS=0"
     cmake_args = [
         "emcmake", "cmake",
         f"-DCMAKE_INSTALL_PREFIX={install_dir}",
@@ -153,7 +155,7 @@ def configure_usd(
 
     dummy_libpython = touch_dummy_libpython(python_include)
 
-    cxx_flags = "-pthread -fwasm-exceptions -sSUPPORT_LONGJMP=wasm"
+    cxx_flags = "-fwasm-exceptions -sSUPPORT_LONGJMP=wasm -sUSE_PTHREADS=0"
     cmake_args = [
         "emcmake", "cmake",
         f"-DCMAKE_TOOLCHAIN_FILE={toolchain}",
@@ -185,7 +187,7 @@ def configure_usd(
         f"-DTBB_tbb_LIBRARY_DEBUG={tbb_dir}/lib/libtbb.a",
         f"-DCMAKE_CXX_FLAGS={cxx_flags}",
         f"-DCMAKE_C_FLAGS={cxx_flags}",
-        f"-DCMAKE_EXE_LINKER_FLAGS=-pthread",
+        f"-DCMAKE_EXE_LINKER_FLAGS=",
         f"-S{REPO_ROOT}",
         f"-B{build_dir}",
     ]

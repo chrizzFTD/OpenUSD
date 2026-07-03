@@ -33,17 +33,13 @@ Two WASM modes coexist on the fork:
 └───────────────────────────────┴─────────────────────────────────┘
 ```
 
-Pyodide wheel layout (mirrors native `usd-core`):
+Pyodide wheel layout (PR-A spike: static monolith inside `_tf.so`; PR-B may revisit vendored `.libs`):
 
 ```
-usd_core-*.whl
+usd_tf_pyodide_spike-*.whl
 ├── pxr/
 │   ├── __init__.py
-│   ├── Tf/_tf.so          ← SIDE_MODULE=2, exports _PyInit__tf
-│   ├── Usd/_usd.so
-│   └── …
-└── pxr/usd_m.libs/
-    └── libusd_m.so        ← SIDE_MODULE=1 monolithic C++ (optional split)
+│   └── Tf/_tf.so          ← SIDE_MODULE=2; static usd_m via WHOLE_ARCHIVE
 ```
 
 ## PR roadmap (fork)
@@ -56,8 +52,8 @@ usd_core-*.whl
 - [x] `_pxr_python_module()` SIDE_MODULE link options
 - [x] `build_scripts/pyodide/build_spike.py`
 - [x] wasm32 `TfPyObjWrapper` ABI fix (`pyObjWrapper.h`)
-- [x] `_tf.so` compiles as WebAssembly SIDE_MODULE (import test pending wheel packaging)
-- [ ] `from pxr import Tf` in browser via pyrepl-web + packaged private wheel
+- [x] `_tf.so` compiles as WebAssembly SIDE_MODULE and loads under Pyodide 314
+- [x] `from pxr import Tf` in browser via pyrepl-web + packaged private wheel (Node harness: `test_tf_import.mjs`)
 
 ### PR-B — Full `usd-core` module set + private wheel + browser demo
 
@@ -193,12 +189,14 @@ first successful oneTBB build in `--build-root`.
 
 ## Known blockers
 
-1. **Boost.Python on Emscripten** — untested; spike validates
-2. **TBB + pthread** — reuse oneTBB wasm build; validate under Pyodide
+1. **Boost.Python on Emscripten** — validated by PR-A `from pxr import Tf` + `Tf.StringSplit`
+2. **TBB + pthread** — oneTBB wasm build works; TBB still references some `pthread_*` stubs but load succeeds without `-pthread` compile flags
 3. **TfScriptModuleLoader** — Python `import` path should work; runtime `dlopen` plugins won't
 4. **Exception ABI** — must not mix `-fexceptions` objects with Pyodide `-fwasm-exceptions`
 5. **pyodide-build 0.36 vs 314** — use `xbuildenv install 314.0.2 --force` until compatibility metadata catches up
 6. **TfPyObjWrapper wasm32 ABI** — `shared_ptr` is 8 bytes on wasm32; stub sizes adjusted in `pyObjWrapper.h`
+7. **No `-pthread` on Pyodide wheels** — pyemscripten ABI forbids it; also omit `-pthread` compile flags (`gccclangshareddefaults.cmake`) so SIDE_MODULEs do not import `pthread_*` from `env`
+8. **Monolith packaging** — PR-A statically links `usd_m` into each extension via `WHOLE_ARCHIVE`; a separate `libusd_ms.so` SIDE_MODULE failed to load under Pyodide 314
 
 ## Out of scope (v1)
 
