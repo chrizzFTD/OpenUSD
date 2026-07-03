@@ -1195,10 +1195,13 @@ function(pxr_toplevel_prologue)
             )
 
             # Our monolithic library.
-            # Pyodide extension modules link the static monolith with
-            # WHOLE_ARCHIVE; a separate libusd_ms.so SIDE_MODULE is not
-            # loadable in the browser (pthread/env symbol issues).
-            if(BUILD_SHARED_LIBS AND NOT (EMSCRIPTEN AND PXR_BUILD_PYODIDE))
+            # Under Pyodide we ship the C++ core once as a shared side module
+            # (libusd_ms.so, -sSIDE_MODULE=1) vendored into the wheel's .libs/,
+            # with thin _*.so extensions dynamically linking against it. This
+            # replaces PR-A's per-module static WHOLE_ARCHIVE monolith, which
+            # would duplicate the whole codebase ~30x, and gives every module
+            # one shared Boost.Python / TfType registry.
+            if(BUILD_SHARED_LIBS)
                 set(libType SHARED)
                 set(libName "usd_ms")
             else()
@@ -1290,7 +1293,12 @@ function(pxr_toplevel_epilogue)
             target_compile_definitions(${lib} PRIVATE ${exports})
         endforeach()
 
-        if(BUILD_SHARED_LIBS AND NOT (EMSCRIPTEN AND PXR_BUILD_PYODIDE))
+        if(BUILD_SHARED_LIBS)
+            # Shared monolith (native usd_ms, or the Pyodide libusd_ms.so side
+            # module). Linking the OBJECT libraries pulls all their objects into
+            # the shared library; -sSIDE_MODULE=1 (added in the prologue for
+            # Pyodide) keeps every TF_REGISTRY_FUNCTION / moduleDeps static
+            # initializer alive, exactly as WHOLE_ARCHIVE did per-module in PR-A.
             target_link_libraries(usd_m
                 PUBLIC
                     ${PXR_OBJECT_LIBS}
@@ -1298,10 +1306,14 @@ function(pxr_toplevel_epilogue)
                     ${PXR_THREAD_LIBS}
             )
 
-            _pxr_init_rpath(rpath "${libInstallPrefix}")
-            _pxr_add_rpath(rpath "${CMAKE_INSTALL_PREFIX}/${PXR_INSTALL_SUBDIR}/lib")
-            _pxr_add_rpath(rpath "${CMAKE_INSTALL_PREFIX}/lib")
-            _pxr_install_rpath(rpath usd_m)
+            # Native install RPATHs are meaningless for an Emscripten side
+            # module (auditwheel repair writes the wheel RPATH instead).
+            if(NOT (EMSCRIPTEN AND PXR_BUILD_PYODIDE))
+                _pxr_init_rpath(rpath "${libInstallPrefix}")
+                _pxr_add_rpath(rpath "${CMAKE_INSTALL_PREFIX}/${PXR_INSTALL_SUBDIR}/lib")
+                _pxr_add_rpath(rpath "${CMAKE_INSTALL_PREFIX}/lib")
+                _pxr_install_rpath(rpath usd_m)
+            endif()
         else()
             foreach(lib ${PXR_OBJECT_LIBS})
                 target_link_libraries(usd_m

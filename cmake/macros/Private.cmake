@@ -332,7 +332,13 @@ function(_install_resource_files NAME pluginInstallPrefix pluginToLibraryPath)
             set(installDestination ${installDestination}/${dirPath})
         endif()
 
-        if (EMSCRIPTEN)
+        # The C++ wasm-embed path (wasmFetchResolver MAIN_MODULE) consumes
+        # plugInfo from the Emscripten JS loader's virtual FS via --embed-file.
+        # Pyodide loads side modules as raw wasm through its own loader and does
+        # not honor per-module --embed-file data (and embedding would bloat
+        # libusd_ms.so), so for Pyodide we rely on the normal install(FILES ...)
+        # step below plus a runtime plugin path (see pxr/__init__.py bootstrap).
+        if (EMSCRIPTEN AND NOT PXR_BUILD_PYODIDE)
             string(REGEX REPLACE "^lib\\/" "/" emscriptenLocalPath "${resourcesPath}")
 
             set(resourceDestDir "${emscriptenLocalPath}")
@@ -867,7 +873,11 @@ function(_pxr_target_link_libraries NAME)
         # If we use any internal libraries then link against the
         # monolithic library instead.
         if(internal)
-            if(BUILD_SHARED_LIBS AND NOT (EMSCRIPTEN AND PXR_BUILD_PYODIDE))
+            if(BUILD_SHARED_LIBS)
+                # Link against the shared monolith (native usd_ms, or the
+                # Pyodide libusd_ms.so side module). Undefined USD symbols are
+                # resolved at load time from the shared library; for Pyodide
+                # PXR_PY_UNDEFINED_DYNAMIC_LOOKUP permits them at link time.
                 set(internal usd_m)
             else()
                 # If linking against the static monolithic library

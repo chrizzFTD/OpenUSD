@@ -173,6 +173,12 @@ def configure_usd(
         "-DPXR_PY_UNDEFINED_DYNAMIC_LOOKUP=ON",
         "-DPXR_BUILD_MONOLITHIC=ON",
         "-DBUILD_SHARED_LIBS=ON",
+        # Compile-time fallback plugin search path (see PR-B-PLAN.md §7.3). The
+        # runtime primary mechanism is PXR_PLUGINPATH_NAME set in the top-level
+        # pxr/__init__.py; this bakes an install-relative fallback pointing at
+        # the vendored pxr/pluginfo/ so Plug can still find plugInfo if the env
+        # var path is ever wrong.
+        "-DPXR_INSTALL_LOCATION=../pxr/pluginfo",
         "-DPXR_BUILD_IMAGING=OFF",
         "-DPXR_BUILD_USD_TOOLS=OFF",
         "-DPXR_BUILD_TESTS=OFF",
@@ -194,9 +200,9 @@ def configure_usd(
     run(cmake_args, env=env)
 
 
-def build_usd(build_dir: pathlib.Path, target: str, env: dict) -> None:
+def build_usd(build_dir: pathlib.Path, targets: list[str], env: dict) -> None:
     run(
-        ["cmake", "--build", build_dir, "--target", target, "-j", str(os.cpu_count() or 4)],
+        ["cmake", "--build", build_dir, "--target", *targets, "-j", str(os.cpu_count() or 4)],
         env=env,
     )
 
@@ -217,8 +223,11 @@ def main() -> None:
     )
     parser.add_argument(
         "--build-target",
-        default="_tf",
-        help="CMake target to build (default: _tf python module)",
+        default=["_tf"],
+        nargs="+",
+        help="CMake target(s) to build (default: _tf python module). "
+             "Pass e.g. '_tf _sdf' for the 2-module gate or 'install' for the "
+             "full usd-core install tree.",
     )
     parser.add_argument(
         "--configure-only",
@@ -256,7 +265,7 @@ def main() -> None:
     if not args.configure_only:
         build_usd(usd_build, args.build_target, env)
         print(f"\nSpike build complete. Install tree: {args.inst}")
-        print("Next: package _tf.so into a pyemscripten wheel and test with pyodide venv.")
+        print("Next: package the module(s) into a pyemscripten wheel and test with the Node harness.")
 
 
 if __name__ == "__main__":
