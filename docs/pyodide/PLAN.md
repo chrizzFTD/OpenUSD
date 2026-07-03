@@ -8,7 +8,7 @@
 
 | Topic | Decision |
 |-------|----------|
-| Deployment | Browser only — **[chrizzFTD/pyrepl-web](https://github.com/chrizzFTD/pyrepl-web) `grill` branch** (Python 3.14 / Pyodide 314) |
+| Deployment | Browser via **pyrepl-web `grill`** runtime; demo assets in **this repo** (`extras/pyodide/demo/`) |
 | Module scope | Match `usd-core` PyPI (no imaging); shrink if blocked |
 | Architecture | wasm32 |
 | Distribution | Private wheel first → PyPI when ready |
@@ -59,69 +59,79 @@ usd_core-*.whl
 - [x] `_tf.so` compiles as WebAssembly SIDE_MODULE (import test pending wheel packaging)
 - [ ] `from pxr import Tf` in browser via pyrepl-web + packaged private wheel
 
-### PR-B — Full `usd-core` module set + private wheel + pyrepl-web demo
+### PR-B — Full `usd-core` module set + private wheel + browser demo
 
-**Build & package (this repo — OpenUSD fork)**
+All PR-B work stays **in this OpenUSD repository**. We use
+**[chrizzFTD/pyrepl-web `grill`](https://github.com/chrizzFTD/pyrepl-web/tree/grill)** only as the
+pre-built REPL runtime (Pyodide 314) — **no changes to the pyrepl-web repo**.
+
+**Build & package**
 
 - Monolithic `usd_m` SIDE_MODULE packaging (same module list as PyPI CI)
 - `build_scripts/pyodide/package_wheel.py` + plugInfo layout
-- Private `pyemscripten_2026_0_wasm32` wheel (hosted on CDN/GitHub Releases before PyPI)
+- Private `pyemscripten_2026_0_wasm32` wheel (served alongside the demo static files)
 
-**Browser demo (pyrepl-web fork — not raw `loadPyodide` HTML)**
+**Browser demo (this repo)**
 
-Demo lives in **[chrizzFTD/pyrepl-web](https://github.com/chrizzFTD/pyrepl-web)** on the **`grill`** branch, which already ships:
+Demo assets live under `extras/pyodide/demo/` (alongside the existing
+`extras/usd/examples/wasmFetchResolver` C++ wasm pattern):
 
-| pyrepl-web capability | Relevance for USD |
-|----------------------|-------------------|
-| `pyodide@^314.0.1` npm dep | Matches our Pyodide 314 xbuildenv / `pyemscripten_2026_0` target |
-| `loadPyodide({ indexURL: "…/v314.0.1/full/" })` | Same runtime ABI we compile against |
-| `<py-repl packages="…">` | Preloads wheels via **micropip** at REPL startup |
-| `src` / `replay-src` attributes | Bootstrap + guided USD scripting demo scripts |
-| xterm.js REPL + tab completion | Interactive USD exploration without custom UI work |
+```
+extras/pyodide/demo/
+  index.html          # loads pyrepl-web from grill; hosts <py-repl>
+  bootstrap.py        # micropip install of our private wheel
+  usd_demo.py         # replay-src: guided USD scripting
+  README.md           # how to serve locally
+```
 
-**Cross-repo workflow**
+**How we consume pyrepl-web `grill` (read-only)**
+
+| Approach | Use when |
+|----------|----------|
+| **Local sibling clone** | Development: clone `pyrepl-web` at `grill`, `bun run build`, serve `dist/pyrepl.js` from that tree |
+| **Pinned commit URL** | CI/docs: reference a known `grill` commit’s built `dist/pyrepl.js` (e.g. GitHub raw or Release asset) |
+| **`packages="usd-core"`** | After PyPI publish: pyrepl-web’s existing `micropip.install()` path via `<py-repl packages="usd-core">` |
+
+pyrepl-web `grill` already provides what we need without forking it:
+
+| pyrepl-web capability | How we use it |
+|----------------------|---------------|
+| `pyodide@^314.0.1` | Same Pyodide 314 / `pyemscripten_2026_0` ABI as our wheel |
+| `loadPyodide({ indexURL: "…/v314.0.1/full/" })` | Handled inside `pyrepl.js` — we do not duplicate |
+| `<py-repl packages="…">` / `src` / `replay-src` | Our demo HTML points at local `bootstrap.py` + `usd_demo.py` |
+| xterm REPL + completion | Free — no custom UI in OpenUSD |
+
+**Workflow (single repo)**
 
 ```mermaid
 flowchart LR
-    A[OpenUSD fork\nbuild_scripts/pyodide] -->|private wheel| B[CDN / GitHub Release\nusd-core-*.whl]
-    B -->|micropip.install URL| C[pyrepl-web grill\nexamples/usd/]
-    C -->|py-repl web component| D[Browser REPL\nimport pxr.Usd]
+    A[OpenUSD\nbuild_scripts/pyodide] -->|wheel| B[extras/pyodide/demo/\nstatic server]
+    C[pyrepl-web grill\ndist/pyrepl.js] -->|script src| B
+    B -->|py-repl + micropip| D[Browser\nimport pxr.Usd]
 ```
 
-**Demo files to add in pyrepl-web (`grill` branch)**
-
-```
-pyrepl-web/
-  examples/
-    usd/
-      index.html          # py-repl page for USD demo
-      bootstrap.py        # silent src: micropip install private wheel
-      usd_demo.py         # replay-src: guided Stage.Open / traversal
-```
-
-**`examples/usd/index.html`** (sketch — uses pyrepl-web, not hand-rolled Pyodide):
+**`extras/pyodide/demo/index.html`** (sketch):
 
 ```html
-<script src="/dist/pyrepl.js"></script>
+<!-- pyrepl.js built from chrizzFTD/pyrepl-web @ grill (sibling clone or pinned URL) -->
+<script src="/path/to/pyrepl-web/dist/pyrepl.js"></script>
 
-<!-- bootstrap.py installs the private wheel; usd_demo.py is replayed with >>> prompts -->
 <py-repl
   theme="catppuccin-mocha"
   repl-title="USD Python (Pyodide 314)"
-  src="/examples/usd/bootstrap.py"
-  replay-src="/examples/usd/usd_demo.py"
+  src="/bootstrap.py"
+  replay-src="/usd_demo.py"
   no-buttons
 ></py-repl>
 ```
 
-**`examples/usd/bootstrap.py`** — install private wheel before REPL accepts input:
+**`extras/pyodide/demo/bootstrap.py`** — install our wheel (served from the same static origin):
 
 ```python
 import micropip
 
-# Until usd-core is on PyPI, point at a hosted pyemscripten wheel.
-# Wheel must be tagged: cp314-pyemscripten_2026_0_wasm32
-WHEEL_URL = "https://<your-cdn>/usd_core-26.x.x-cp314-pyemscripten_2026_0_wasm32.whl"
+# Relative URL works when wheel is co-hosted with the demo page.
+WHEEL_URL = "./usd_core-26.x.x-cp314-pyemscripten_2026_0_wasm32.whl"
 
 async def _install():
     await micropip.install(WHEEL_URL)
@@ -130,12 +140,11 @@ import asyncio
 asyncio.ensure_future(_install())
 ```
 
-**`examples/usd/usd_demo.py`** — replayed interactively (`replay-src` or `src` + `replay`):
+**`extras/pyodide/demo/usd_demo.py`**:
 
 ```python
 from pxr import Usd, UsdGeom
 
-# Create an in-memory stage (no filesystem needed in browser)
 stage = Usd.Stage.CreateInMemory()
 world = UsdGeom.Xform.Define(stage, "/World")
 cube = UsdGeom.Cube.Define(stage, "/World/Cube")
@@ -143,25 +152,18 @@ print("Default prim:", stage.GetDefaultPrim())
 print("Cube size:", cube.GetSizeAttr().Get())
 ```
 
-**Why pyrepl-web instead of a minimal HTML page**
+**Local dev** (from `extras/pyodide/demo/README.md`):
 
-- No need to maintain parallel Pyodide 314 loader / indexURL / micropip boilerplate
-- `packages` attribute pattern extends naturally: once `usd-core` is on PyPI with a
-  `pyemscripten_2026_0_wasm32` wheel, demo simplifies to `packages="usd-core"`
-- Tab completion and multi-line editing matter for interactive USD scripting
-- `grill` branch is already on Python 3.14 — no ABI mismatch with our build target
+1. Build wheel: `python build_scripts/pyodide/package_wheel.py …`
+2. Copy wheel into `extras/pyodide/demo/`
+3. Build pyrepl-web once from `grill` (sibling directory): `bun run build`
+4. Serve demo directory + pyrepl `dist/` (e.g. `python -m http.server` or small `server.js`)
 
-**OpenUSD repo scope for PR-B** (this fork only)
+**Why pyrepl-web `grill` as runtime only**
 
-- Wheel build scripts + documented wheel URL for pyrepl-web demo
-- Link from `docs/pyodide/PLAN.md` to pyrepl-web `examples/usd/`
-- Do **not** duplicate a standalone `loadPyodide` HTML demo here
-
-**pyrepl-web repo scope** (separate PR on chrizzFTD/pyrepl-web `grill`)
-
-- Add `examples/usd/` as above
-- Optional: dev-server static route for hosted `.whl` during local testing
-- README section: “USD / OpenUSD” pointing back to OpenUSD fork docs
+- Pyodide 314 loader, micropip, and REPL UX stay upstream in pyrepl-web
+- OpenUSD owns only USD-specific assets: wheel, bootstrap, demo script, HTML glue
+- No parallel `loadPyodide` boilerplate to maintain in this repo
 
 ### PR-C — CI + hardening
 
@@ -200,7 +202,8 @@ first successful oneTBB build in `--build-root`.
 
 ## Out of scope (v1)
 
-- Hand-rolled `loadPyodide` HTML demos (use **pyrepl-web `grill`** instead)
+- Changes to the **pyrepl-web** repository (consume `grill` as read-only runtime)
+- Hand-rolled `loadPyodide` HTML (pyrepl-web provides the REPL shell)
 - JupyterLite, Node/pyodide venv as deployment target
 - Imaging / UsdImagingGL / usdview
 - wasm64 / MEMORY64
