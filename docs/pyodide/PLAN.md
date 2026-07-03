@@ -61,10 +61,19 @@ All PR-B work stays **in this OpenUSD repository**. We use
 **[chrizzFTD/pyrepl-web `grill`](https://github.com/chrizzFTD/pyrepl-web/tree/grill)** only as the
 pre-built REPL runtime (Pyodide 314) — **no changes to the pyrepl-web repo**.
 
+> **Detailed design & implementation plan:** see [`PR-B-PLAN.md`](./PR-B-PLAN.md).
+> Key decision: ship the C++ core **once** as a shared `libusd_ms.so`
+> (`-sSIDE_MODULE=1`) vendored in the wheel's `.libs/`, with thin `_*.so`
+> extensions (`-sSIDE_MODULE=2`) dynamically linking against it via RPATH —
+> replacing PR-A's per-module static `WHOLE_ARCHIVE` monolith (which would
+> duplicate the whole codebase ~30×). This also gives all modules one shared
+> Boost.Python converter / `TfType` registry.
+
 **Build & package**
 
-- Monolithic `usd_m` SIDE_MODULE packaging (same module list as PyPI CI)
-- `build_scripts/pyodide/package_wheel.py` + plugInfo layout
+- Shared `libusd_ms.so` SIDE_MODULE + thin per-module `_*.so` extensions (same module list as PyPI CI)
+- `build_scripts/pyodide/package_wheel.py` + `pxr/pluginfo/` layout (mirror PyPI relocation)
+- Runtime plugin discovery via `PXR_PLUGINPATH_NAME` set in top-level `pxr/__init__.py`
 - Private `pyemscripten_2026_0_wasm32` wheel (served alongside the demo static files)
 
 **Browser demo (this repo)**
