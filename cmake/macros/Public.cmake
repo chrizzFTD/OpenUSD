@@ -1214,6 +1214,10 @@ function(pxr_toplevel_prologue)
                     IMPORT_PREFIX "${libPrefix}"
                     OUTPUT_NAME ${libName}
             )
+            if(EMSCRIPTEN AND PXR_BUILD_PYODIDE AND BUILD_SHARED_LIBS)
+                # Monolithic C++ library shipped as a vendored SIDE_MODULE.
+                target_link_options(usd_m PRIVATE "SHELL:-sSIDE_MODULE=1")
+            endif()
             _get_install_dir("lib" libInstallPrefix)
             install(
                 TARGETS usd_m

@@ -28,9 +28,19 @@ if(APPLE)
 endif()
 
 if(EMSCRIPTEN)
-    set(EMSCRIPTEN_COMPILE_FLAGS "-fexceptions")
-    add_compile_options("SHELL:${EMSCRIPTEN_COMPILE_FLAGS}")
-    add_link_options("SHELL:${EMSCRIPTEN_COMPILE_FLAGS} -sALLOW_MEMORY_GROWTH=1")
+    if(PXR_BUILD_PYODIDE)
+        # Match pyemscripten_2026_0 (Pyodide 314): WASM exception handling
+        # and setjmp/longjmp. See https://pyodide.org/en/stable/development/abi/314.html
+        set(EMSCRIPTEN_COMPILE_FLAGS "-fwasm-exceptions -sSUPPORT_LONGJMP=wasm")
+        add_compile_options("SHELL:${EMSCRIPTEN_COMPILE_FLAGS}")
+        add_link_options(
+            "SHELL:${EMSCRIPTEN_COMPILE_FLAGS} -sWASM_BIGINT -sALLOW_MEMORY_GROWTH=1"
+        )
+    else()
+        set(EMSCRIPTEN_COMPILE_FLAGS "-fexceptions")
+        add_compile_options("SHELL:${EMSCRIPTEN_COMPILE_FLAGS}")
+        add_link_options("SHELL:${EMSCRIPTEN_COMPILE_FLAGS} -sALLOW_MEMORY_GROWTH=1")
+    endif()
 endif()
 
 # Allow local includes from source directory.

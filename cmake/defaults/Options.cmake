@@ -160,6 +160,10 @@ set(PXR_LIB_PREFIX ""
 )
 
 option(BUILD_SHARED_LIBS "Build shared libraries." ON)
+option(PXR_BUILD_PYODIDE
+    "Build Python bindings for Pyodide (pyemscripten WASM, browser loadPyodide)."
+    OFF
+)
 option(PXR_BUILD_MONOLITHIC "Build a monolithic library." OFF)
 set(PXR_MONOLITHIC_IMPORT ""
     CACHE
@@ -264,10 +268,18 @@ if (EMSCRIPTEN)
         set(PXR_BUILD_EXEC "OFF")
     endif()
 
-    if (${BUILD_SHARED_LIBS})
+    if (${PXR_BUILD_PYODIDE})
+        if (NOT ${BUILD_SHARED_LIBS})
+            MESSAGE(STATUS
+                "Setting BUILD_SHARED_LIBS=ON because PXR_BUILD_PYODIDE "
+                "requires shared libraries (Emscripten SIDE_MODULE)")
+            set(BUILD_SHARED_LIBS "ON")
+        endif()
+    elseif (${BUILD_SHARED_LIBS})
         MESSAGE(STATUS 
             "Setting BUILD_SHARED_LIBS=OFF because shared libs are not "
-            "supported when targeting wasm")
+            "supported when targeting wasm (enable PXR_BUILD_PYODIDE for "
+            "Python bindings)")
         set(BUILD_SHARED_LIBS "OFF")
     endif()
 endif()

@@ -1062,6 +1062,15 @@ function(_pxr_python_module NAME)
             MFB_PACKAGE_MODULE=${pyModuleName}
     )
 
+    # Pyodide extension modules are Emscripten side modules. Export the
+    # module init symbol for SIDE_MODULE=2 dynamic loading by CPython.
+    if(EMSCRIPTEN AND PXR_BUILD_PYODIDE)
+        target_link_options(${LIBRARY_NAME} PRIVATE
+            "SHELL:-sSIDE_MODULE=2"
+            "SHELL:-sEXPORTED_FUNCTIONS=['_PyInit_${LIBRARY_NAME}']"
+        )
+    endif()
+
     _pxr_target_link_libraries(${LIBRARY_NAME}
         ${NAME}
         ${PXR_MALLOC_LIBRARY}
