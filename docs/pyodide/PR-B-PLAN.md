@@ -453,6 +453,9 @@ with `bun run build`) as documented; the Node harness is the automated gate.
 ## 11. Implementation task breakdown (ordered)
 
 Each task should be its own commit; validate the risky ones before scaling up.
+The toolchain is pre-provisioned (§12), so every task below is buildable and
+testable in-agent — validate each with an actual wasm build + Node harness run,
+not just by inspection.
 
 1. **De-risk the shared side module.** CMake changes §5.1–§5.2 (+ §5.3 gate).
    Build `usd_ms` + `_tf` + `_sdf`. Package a 2-module wheel with `auditwheel
@@ -477,21 +480,35 @@ Each task should be its own commit; validate the risky ones before scaling up.
 
 ## 12. Environment / toolchain notes
 
-PR-B build+test requires the Pyodide 314 cross-build toolchain, which is a large
-download not present in a fresh agent VM:
+The Pyodide 314 cross-build toolchain is now **pre-provisioned in the Cloud Agent
+VM snapshot** (set up in PR #3; see [`AGENTS.md`](../../AGENTS.md) →
+"Cursor Cloud specific instructions"). Baked in: `pyodide-build`, `jinja2`,
+`wheel` (host Python 3.12 user site), the Pyodide `314.0.2` xbuildenv
+(Python 3.14.2, ABI `2026_0`), Emscripten `5.0.3`, and the Node `pyodide`
+package under `build_scripts/pyodide/node_modules`. A minimal idempotent startup
+script refreshes the pip packages without re-downloading the heavy pieces. So a
+fresh agent can build and run the Node smoke test with no additional setup.
 
-```bash
-pip install 'pyodide-build>=0.36' jinja2 wheel
-pyodide xbuildenv install 314.0.2 --force && pyodide xbuildenv use 314.0.2
-pyodide xbuildenv install-emscripten          # Emscripten 5.0.3
-cd build_scripts/pyodide && npm install       # pyodide (Node) for the smoke test
-```
+The PR-A pipeline is verified working in this environment (PR #3):
+`build_spike.py --configure-only` (oneTBB→wasm + USD configure),
+`build_spike.py --skip-onetbb --build-target _tf` (`_tf.so`),
+`package_tf_spike_wheel.py`, and `test_tf_import.mjs` (`from pxr import Tf -> OK`).
+PR-B therefore can — and should — build and test in-agent, not just design on
+paper.
 
-Because this setup (pyodide-build, Emscripten xbuildenv, oneTBB build, Node
-`pyodide` package) is heavy and shared by any agent iterating on this work, it
-should be encoded into the Cloud Agent environment config (via an env-setup
-agent at cursor.com/onboard) so subsequent runs skip re-downloading the
-toolchain.
+Gotchas to carry into PR-B work (from `AGENTS.md`):
+
+- The `pyodide` CLI lives in `~/.local/bin` (on PATH via `~/.bashrc`); in
+  non-interactive shells call `~/.local/bin/pyodide` or prepend it to PATH.
+- **Do not** manually `source emsdk_env.sh` before `build_spike.py` — it sources
+  it itself via `pyodide config get emsdk_dir`.
+- A `jinja2` "missing dependency" warning at CMake configure time is expected and
+  harmless: it probes the *cross* Pyodide interpreter (no `jinja2`), while host
+  Python has it. `jinja2` is only needed for `usdGenSchema` schema regeneration,
+  which the monolith build does **not** require — USD ships pre-generated schema
+  code and `generatedSchema.usda`. This matters for PR-B: the ~16 schema
+  libraries build from their committed generated sources, so no host-side codegen
+  step is added.
 
 ---
 
