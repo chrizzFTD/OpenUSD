@@ -867,7 +867,7 @@ function(_pxr_target_link_libraries NAME)
         # If we use any internal libraries then link against the
         # monolithic library instead.
         if(internal)
-            if(BUILD_SHARED_LIBS)
+            if(BUILD_SHARED_LIBS AND NOT (EMSCRIPTEN AND PXR_BUILD_PYODIDE))
                 set(internal usd_m)
             else()
                 # If linking against the static monolithic library
@@ -1061,6 +1061,15 @@ function(_pxr_python_module NAME)
             MFB_ALT_PACKAGE_NAME=${PXR_PACKAGE}
             MFB_PACKAGE_MODULE=${pyModuleName}
     )
+
+    # Pyodide extension modules are Emscripten side modules. Export the
+    # module init symbol for SIDE_MODULE=2 dynamic loading by CPython.
+    if(EMSCRIPTEN AND PXR_BUILD_PYODIDE)
+        target_link_options(${LIBRARY_NAME} PRIVATE
+            "SHELL:-sSIDE_MODULE=2"
+            "SHELL:-sEXPORTED_FUNCTIONS=['_PyInit_${LIBRARY_NAME}']"
+        )
+    endif()
 
     _pxr_target_link_libraries(${LIBRARY_NAME}
         ${NAME}

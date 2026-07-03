@@ -28,9 +28,21 @@ if(APPLE)
 endif()
 
 if(EMSCRIPTEN)
-    set(EMSCRIPTEN_COMPILE_FLAGS "-fexceptions")
-    add_compile_options("SHELL:${EMSCRIPTEN_COMPILE_FLAGS}")
-    add_link_options("SHELL:${EMSCRIPTEN_COMPILE_FLAGS} -sALLOW_MEMORY_GROWTH=1")
+    if(PXR_BUILD_PYODIDE)
+        # Match pyemscripten_2026_0 (Pyodide 314): WASM exception handling
+        # and setjmp/longjmp. See https://pyodide.org/en/stable/development/abi/314.html
+        # Pyodide SIDE_MODULE wheels must not use pthreads/shared memory.
+        set(EMSCRIPTEN_COMPILE_FLAGS
+            "-fwasm-exceptions -sSUPPORT_LONGJMP=wasm -sUSE_PTHREADS=0")
+        add_compile_options("SHELL:${EMSCRIPTEN_COMPILE_FLAGS}")
+        add_link_options(
+            "SHELL:${EMSCRIPTEN_COMPILE_FLAGS} -sWASM_BIGINT"
+        )
+    else()
+        set(EMSCRIPTEN_COMPILE_FLAGS "-fexceptions")
+        add_compile_options("SHELL:${EMSCRIPTEN_COMPILE_FLAGS}")
+        add_link_options("SHELL:${EMSCRIPTEN_COMPILE_FLAGS} -sALLOW_MEMORY_GROWTH=1")
+    endif()
 endif()
 
 # Allow local includes from source directory.

@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>USD Tf — Pyodide 314 (pyrepl-web)</title>
+  <!--
+    pyrepl.js from chrizzFTD/pyrepl-web @ grill (build with: bun run build).
+    Default assumes pyrepl dist is served at http://localhost:8766/pyrepl.js
+  -->
+  <script src="http://localhost:8766/pyrepl.js"></script>
+</head>
+<body>
+  <h1>USD Tf Pyodide spike</h1>
+  <p>
+    Uses <a href="https://github.com/chrizzFTD/pyrepl-web/tree/grill">pyrepl-web grill</a>
+    (Pyodide 314). Copy the spike wheel into this directory before loading.
+  </p>
+
+  <py-repl
+    theme="catppuccin-mocha"
+    repl-title="USD Tf (Pyodide 314)"
+    src="./bootstrap.py"
+    replay-src="./test_tf.py"
+    no-buttons
+  ></py-repl>
+</body>
+</html>

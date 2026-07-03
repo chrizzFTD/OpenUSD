@@ -19,6 +19,10 @@ set(build_shared_libs "${BUILD_SHARED_LIBS}")
 set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
 find_package(Threads REQUIRED)
 set(PXR_THREAD_LIBS "${CMAKE_THREAD_LIBS_INIT}")
+if(PXR_BUILD_PYODIDE)
+    # Pyodide/pyemscripten forbids -pthread on SIDE_MODULE libraries.
+    set(PXR_THREAD_LIBS "")
+endif()
 
 if(PXR_ENABLE_OPENVDB_SUPPORT)
     # Find Boost package before getting any boost specific components as we need to

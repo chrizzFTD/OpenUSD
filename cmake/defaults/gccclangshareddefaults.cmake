@@ -38,7 +38,8 @@ endif()
 # If using pthreads then tell the compiler.  This should automatically cause
 # the linker to pull in the pthread library if necessary so we also clear
 # PXR_THREAD_LIBS.
-if(CMAKE_USE_PTHREADS_INIT)
+# Pyodide/pyemscripten SIDE_MODULE wheels must not use pthreads.
+if(CMAKE_USE_PTHREADS_INIT AND NOT PXR_BUILD_PYODIDE)
     set(_PXR_GCC_CLANG_SHARED_CXX_FLAGS "${_PXR_GCC_CLANG_SHARED_CXX_FLAGS} -pthread")
     set(PXR_THREAD_LIBS "")
 endif()

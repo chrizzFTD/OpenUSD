@@ -1195,7 +1195,10 @@ function(pxr_toplevel_prologue)
             )
 
             # Our monolithic library.
-            if(BUILD_SHARED_LIBS)
+            # Pyodide extension modules link the static monolith with
+            # WHOLE_ARCHIVE; a separate libusd_ms.so SIDE_MODULE is not
+            # loadable in the browser (pthread/env symbol issues).
+            if(BUILD_SHARED_LIBS AND NOT (EMSCRIPTEN AND PXR_BUILD_PYODIDE))
                 set(libType SHARED)
                 set(libName "usd_ms")
             else()
@@ -1214,6 +1217,10 @@ function(pxr_toplevel_prologue)
                     IMPORT_PREFIX "${libPrefix}"
                     OUTPUT_NAME ${libName}
             )
+            if(EMSCRIPTEN AND PXR_BUILD_PYODIDE AND BUILD_SHARED_LIBS AND libType STREQUAL "SHARED")
+                # Monolithic C++ library shipped as a vendored SIDE_MODULE.
+                target_link_options(usd_m PRIVATE "SHELL:-sSIDE_MODULE=1")
+            endif()
             _get_install_dir("lib" libInstallPrefix)
             install(
                 TARGETS usd_m
@@ -1283,7 +1290,7 @@ function(pxr_toplevel_epilogue)
             target_compile_definitions(${lib} PRIVATE ${exports})
         endforeach()
 
-        if(BUILD_SHARED_LIBS)
+        if(BUILD_SHARED_LIBS AND NOT (EMSCRIPTEN AND PXR_BUILD_PYODIDE))
             target_link_libraries(usd_m
                 PUBLIC
                     ${PXR_OBJECT_LIBS}

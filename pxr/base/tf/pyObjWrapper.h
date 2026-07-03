@@ -36,8 +36,14 @@ PXR_NAMESPACE_OPEN_SCOPE
 class TfPyObjWrapperStub
 {
 public:
+#if defined(__EMSCRIPTEN__) && defined(__wasm32__)
+    // wasm32: std::shared_ptr is 8 bytes / 4-byte aligned.
+    static constexpr std::size_t Size = 8;
+    static constexpr std::size_t Align = 4;
+#else
     static constexpr std::size_t Size = 16;
     static constexpr std::size_t Align = 8;
+#endif
 
 private:
     ARCH_PRAGMA_PUSH

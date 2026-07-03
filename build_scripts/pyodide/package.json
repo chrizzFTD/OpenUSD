@@ -1,0 +1,8 @@
+{
+  "name": "usd-pyodide-test",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "pyodide": "^314.0.1"
+  }
+}
