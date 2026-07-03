@@ -1099,10 +1099,14 @@ function(pxr_setup_plugins)
         RENAME "plugInfo.json"
     )
 
-    # For emscripten builds, we need to ensure that the top level plugInfo.json
-    # file is included in the resulting application bundle.  When installing,
-    # we are sure to reference the installed location of this file.
-    if (EMSCRIPTEN)
+    # For the C++ wasm-embed path, ensure the top-level plugInfo.json is baked
+    # into the application bundle's virtual FS. This is PUBLIC so it propagates
+    # through linking to every dependent; under Pyodide that would embed the
+    # same /usd/plugInfo.json into libusd_ms.so AND every _*.so, and loading a
+    # second module that recreates the file aborts with EEXIST. Pyodide instead
+    # ships plugInfo as wheel package data discovered via PXR_PLUGINPATH_NAME
+    # (see the pxr/__init__.py bootstrap), so gate this to the non-Pyodide path.
+    if (EMSCRIPTEN AND NOT PXR_BUILD_PYODIDE)
         foreach(lib ${PXR_CORE_LIBS})
           target_link_options(${lib} PUBLIC
               "$<BUILD_INTERFACE:SHELL:--embed-file ${CMAKE_CURRENT_BINARY_DIR}/plugins_plugInfo.json@/usd/plugInfo.json>"
