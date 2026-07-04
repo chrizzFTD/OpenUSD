@@ -1,6 +1,7 @@
 # PR-C — CI, size hardening, and PyPI release as `grill-usd-core`
 
-**Status:** design / implementation plan (not yet implemented)
+**Status:** implemented up to the publish step (§11 tasks 1–5, 8 done; §11
+tasks 6–7 need maintainer account access — see the runbook in §4.4)
 **Branch base:** builds on PR-B (`cursor/pyodide-pr-b-usd-core-*`, shared
 `libusd_ms.so` side module + `package_wheel.py` + browser demo)
 **Scope:** all work stays in this OpenUSD fork; consume
@@ -208,6 +209,31 @@ Fallbacks retained for development / pre-publish:
   `grill-usd-core` project pointing at this repo + the release workflow.
 - **Claim the name** `grill-usd-core` on PyPI (and TestPyPI) before the first
   automated run.
+
+#### Maintainer release runbook (as implemented — needs account access)
+
+Everything below is wired up in `.github/workflows/pyodide-wheel.yml`; only
+these one-time account steps and the workflow dispatches need the maintainer:
+
+1. On **TestPyPI** (test.pypi.org) *and* **PyPI** (pypi.org): add a **pending
+   trusted publisher** for the project name `grill-usd-core` (Your account →
+   Publishing), with repository `chrizzFTD/OpenUSD`, workflow
+   `pyodide-wheel.yml`, and environment `testpypi` / `pypi` respectively.
+   The first successful OIDC upload claims the name.
+2. In the GitHub repo settings, create the `testpypi` and `pypi`
+   **environments** (optionally with required reviewers to gate publishes).
+3. **TestPyPI dry-run**: run the *Pyodide wheel (grill-usd-core)* workflow
+   with `publish: testpypi` and `version: 26.8.dev1` (bump `.devN` per
+   iteration — (Test)PyPI files are immutable). Validate the published
+   package end-to-end:
+   `node build_scripts/pyodide/test_usd_import.mjs grill-usd-core
+   https://test.pypi.org/simple` (this index-resolution path is already
+   validated in-repo against a local PEP 503 index).
+4. **PyPI release**: dispatch with `publish: pypi` (no version override →
+   `26.8` from `pxr.h`), or push a `pyodide-v*` tag. Re-publishes of the same
+   USD version use the `post` input (`26.8.postN`).
+5. Validate: `node build_scripts/pyodide/test_usd_import.mjs grill-usd-core`
+   and the browser demo (`extras/pyodide/demo/`, `packages="grill-usd-core"`).
 
 ---
 
