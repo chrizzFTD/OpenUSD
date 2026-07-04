@@ -70,6 +70,17 @@ node test_usd_import.mjs ../../dist/pyodide/grill_usd_core-*.whl
 Expected output: `from pxr import Usd, UsdGeom, Sdf, Gf -> OK` followed by the
 serialized `.usda` stage.
 
+## Automated smoke test (pyodide venv, no browser)
+
+Validates the PEP 783 native install path (`pip` resolves the
+`pyemscripten_2026_0_wasm32` tag inside a [`pyodide venv`](https://pyodide.org/en/stable/usage/building-and-testing-packages.html)).
+Requires a *host* CPython 3.14 with `pyodide-build` (set `PYODIDE_CLI` to its
+`pyodide` entry point if it is not first on `PATH`):
+
+```bash
+build_scripts/pyodide/test_pyodide_venv.sh dist/pyodide/grill_usd_core-*.whl
+```
+
 ## What success looks like
 
 - **Node harness**: `from pxr import Usd, UsdGeom, Sdf, Gf` imports, authors a
