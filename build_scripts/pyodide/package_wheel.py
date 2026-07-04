@@ -94,13 +94,15 @@ setuptools.setup(
     description="Pixar's Universal Scene Description (Pyodide 314 / wasm32)",
     packages=setuptools.find_packages(PYTHON_LIB_DIR),
     package_dir={"": PYTHON_LIB_DIR},
+    # package_data is authoritative here: the staging tree is not a VCS
+    # checkout, so include_package_data has nothing to discover. Pure-Python
+    # companions (usdGenSchema.py, UsdUtils/*.py, ...) are picked up as normal
+    # modules of their packages; we only need to declare the non-.py data.
     package_data={
-        # Extension modules and every pure-Python companion shipped alongside
-        # the generated bindings (usdGenSchema.py, codegenTemplates/**, etc.).
+        # Extension modules (in every package) + the vendored plugin registry.
         "": ["*.so"],
         "pxr": pluginfo_files,
     },
-    include_package_data=True,
     cmdclass={"bdist_wheel": EmscriptenBdistWheel},
     zip_safe=False,
     python_requires=">=3.14, <3.15",

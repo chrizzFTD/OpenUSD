@@ -1310,8 +1310,14 @@ function(pxr_toplevel_epilogue)
                     ${PXR_THREAD_LIBS}
             )
 
-            # Native install RPATHs are meaningless for an Emscripten side
-            # module (auditwheel repair writes the wheel RPATH instead).
+            # Native install RPATHs do not apply to an Emscripten side module.
+            # Under Pyodide, the extension _*.so declare libusd_ms.so as a
+            # NEEDED dependency; pyodide's loader resolves it at load time by
+            # searching LD_LIBRARY_PATH (its DSO dir + site-packages), not via
+            # an ELF-style RPATH. (pyodide auditwheel repair does write a
+            # $ORIGIN RUNTIME_PATH into dylink.0, but this Emscripten 5.0.3
+            # loader does not consult it; discovery works through the search
+            # path instead.)
             if(NOT (EMSCRIPTEN AND PXR_BUILD_PYODIDE))
                 _pxr_init_rpath(rpath "${libInstallPrefix}")
                 _pxr_add_rpath(rpath "${CMAKE_INSTALL_PREFIX}/${PXR_INSTALL_SUBDIR}/lib")
