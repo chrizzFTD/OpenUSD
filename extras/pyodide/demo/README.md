@@ -1,6 +1,6 @@
 # OpenUSD Pyodide browser demo (PR-B)
 
-Interactive browser demo for the full `usd-core` Pyodide 314 wheel using
+Interactive browser demo for the full `grill-usd-core` Pyodide 314 wheel using
 **[pyrepl-web `grill`](https://github.com/chrizzFTD/pyrepl-web/tree/grill)** as the
 REPL runtime. No changes to pyrepl-web — only consume its built `pyrepl.js`.
 
@@ -28,10 +28,10 @@ dynamically linking against it, plus the plugin registry under `pxr/pluginfo/`.
    python build_scripts/pyodide/package_wheel.py \
        --build-root build/pyodide-spike \
        --output-dir dist/pyodide
-   cp dist/pyodide/usd_core-*.whl extras/pyodide/demo/
+   cp dist/pyodide/grill_usd_core-*.whl extras/pyodide/demo/
    ```
 
-   Then update the `packages="./usd_core-<ver>-...whl"` filename in
+   Then update the `packages="./grill_usd_core-<ver>-...whl"` filename in
    `index.html` to match the copied wheel version.
 
 3. **pyrepl-web `grill`** (sibling clone, build once):
@@ -64,7 +64,7 @@ silent startup import and `usd_demo.py` is replayed into the REPL.
 
 ```bash
 cd build_scripts/pyodide && npm install
-node test_usd_import.mjs ../../dist/pyodide/usd_core-*.whl
+node test_usd_import.mjs ../../dist/pyodide/grill_usd_core-*.whl
 ```
 
 Expected output: `from pxr import Usd, UsdGeom, Sdf, Gf -> OK` followed by the

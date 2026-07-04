@@ -13,11 +13,12 @@
 <body>
   <h1>OpenUSD Python (Pyodide 314)</h1>
   <p>
-    Full <code>usd-core</code> wheel (shared <code>libusd_ms.so</code> side
-    module) running under
+    Full <code>grill-usd-core</code> wheel (shared <code>libusd_ms.so</code>
+    side module) running under
     <a href="https://github.com/chrizzFTD/pyrepl-web/tree/grill">pyrepl-web grill</a>
-    (Pyodide 314). Copy the <code>usd_core-*.whl</code> into this directory and
-    update the <code>packages=</code> filename below to match its version.
+    (Pyodide 314). Copy the <code>grill_usd_core-*.whl</code> into this
+    directory and update the <code>packages=</code> filename below to match its
+    version.
   </p>
 
   <!--
@@ -29,7 +30,7 @@
   <py-repl
     theme="catppuccin-mocha"
     repl-title="USD Python (Pyodide 314)"
-    packages="./usd_core-26.8-cp314-cp314-pyemscripten_2026_0_wasm32.whl"
+    packages="./grill_usd_core-26.8-cp314-cp314-pyemscripten_2026_0_wasm32.whl"
     src="./bootstrap.py"
     replay-src="./usd_demo.py"
     no-buttons

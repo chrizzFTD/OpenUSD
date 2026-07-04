@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
-"""Package the full usd-core Pyodide 314 wheel (PR-B).
+"""Package the usd-core Pyodide 314 wheel (PR-B), published as grill-usd-core (PR-C).
 
 Consumes a USD install tree produced by ``build_spike.py --build-target install``
 (cross-built for Emscripten / Pyodide 314) and produces a
-``usd_core-<ver>-cp314-cp314-pyemscripten_2026_0_wasm32.whl`` that ships the C++
-core once as a vendored ``.libs/libusd_ms.so`` shared side module, with thin
-``_*.so`` extension modules dynamically linking against it, plus the runtime
-plugin registry under ``pxr/pluginfo/``.
+``grill_usd_core-<ver>-cp314-cp314-pyemscripten_2026_0_wasm32.whl`` that ships
+the C++ core once as a vendored ``.libs/libusd_ms.so`` shared side module, with
+thin ``_*.so`` extension modules dynamically linking against it, plus the
+runtime plugin registry under ``pxr/pluginfo/``.
+
+The distribution name defaults to ``grill-usd-core`` (the unofficial testing
+package for the wasm build — distinct from Pixar's official ``usd-core``, which
+has no wasm wheels). Pass ``--dist-name usd-core`` for local parity testing;
+the import name is ``pxr`` either way.
 
 Layout mirrors the native PyPI relocation (build_scripts/pypi/package_files/
 setup.py) adapted for a single monolithic Emscripten side module.
@@ -89,7 +94,7 @@ pluginfo_files = [
 ]
 
 setuptools.setup(
-    name="usd-core",
+    name="@DIST_NAME@",
     version="@VERSION@",
     description="Pixar's Universal Scene Description (Pyodide 314 / wasm32)",
     packages=setuptools.find_packages(PYTHON_LIB_DIR),
@@ -143,7 +148,7 @@ def detect_version(inst: pathlib.Path, override: str | None) -> str:
 
 
 def stage_wheel(
-    *, inst: pathlib.Path, stage_dir: pathlib.Path, version: str
+    *, inst: pathlib.Path, stage_dir: pathlib.Path, version: str, dist_name: str
 ) -> tuple[pathlib.Path, pathlib.Path]:
     """Assemble the wheel staging tree from the USD install directory."""
     pxr_src = inst / "lib" / "python" / "pxr"
@@ -194,7 +199,9 @@ def stage_wheel(
 
     # 4. Emit setup.py.
     (stage_dir / "setup.py").write_text(
-        SETUP_PY_TEMPLATE.replace("@VERSION@", version)
+        SETUP_PY_TEMPLATE
+        .replace("@DIST_NAME@", dist_name)
+        .replace("@VERSION@", version)
     )
 
     return inst / "lib", stage_dir
@@ -241,7 +248,16 @@ def build_and_repair(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Package the usd-core Pyodide wheel")
+    parser = argparse.ArgumentParser(
+        description="Package the grill-usd-core Pyodide wheel"
+    )
+    parser.add_argument(
+        "--dist-name",
+        default="grill-usd-core",
+        help="distribution (PyPI) name; drives the wheel filename and the "
+             "vendored <name>.libs/ directory. Use 'usd-core' for local "
+             "parity testing. The import name is always 'pxr'.",
+    )
     parser.add_argument(
         "--build-root",
         type=pathlib.Path,
@@ -277,11 +293,13 @@ def main() -> None:
     version = detect_version(inst, args.version)
     stage_dir = args.stage_dir or (args.build_root / "wheel-stage")
 
-    libdir, stage_dir = stage_wheel(inst=inst, stage_dir=stage_dir, version=version)
+    libdir, stage_dir = stage_wheel(
+        inst=inst, stage_dir=stage_dir, version=version, dist_name=args.dist_name
+    )
     wheel = build_and_repair(
         stage_dir=stage_dir, libdir=libdir, output_dir=args.output_dir
     )
-    print(f"\nRepaired usd-core wheel: {wheel}")
+    print(f"\nRepaired {args.dist_name} wheel: {wheel}")
 
 
 if __name__ == "__main__":
