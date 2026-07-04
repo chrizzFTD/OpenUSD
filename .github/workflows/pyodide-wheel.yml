@@ -1,0 +1,178 @@
+name: Pyodide wheel (grill-usd-core)
+
+# PR-C (docs/pyodide/PR-C-PLAN.md §7): build the usd-core module set for
+# Pyodide 314 / Emscripten 5.0.3, package it as the grill-usd-core
+# pyemscripten_2026_0_wasm32 wheel, smoke-test it (Node micropip harness +
+# pyodide venv pip install), and optionally publish via PyPI Trusted
+# Publishing (OIDC — no long-lived tokens; requires a trusted publisher
+# configured on the (Test)PyPI grill-usd-core project for this repo/workflow).
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish the wheel after a green build"
+        type: choice
+        options: [none, testpypi, pypi]
+        default: none
+      version:
+        description: >-
+          Full PEP 440 version override (e.g. 26.8.dev1 for TestPyPI
+          iteration). Empty = derive <minor>.<patch> from pxr.h.
+        type: string
+        default: ""
+      post:
+        description: >-
+          .postN segment appended to the pxr.h version (re-publish of the
+          same USD version; ignored when a version override is given).
+        type: string
+        default: ""
+  push:
+    tags:
+      # Release trigger; the version is derived from pxr.h (append .postN by
+      # dispatching the workflow manually instead when re-publishing).
+      - "pyodide-v*"
+
+env:
+  XBUILDENV_VERSION: "314.0.2"
+  ONETBB_VERSION: "2021.12.0"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Host Python 3.14 serves double duty: it must match the Pyodide 314
+      # xbuildenv for `pyodide venv` to work, and it runs pyodide-build.
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install host dependencies
+        run: pip install 'pyodide-build>=0.36' jinja2 wheel twine
+
+      # The xbuildenv (Python 3.14.2 cross env) + Emscripten SDK 5.0.3 are the
+      # heavyweight downloads; cache them keyed on the pinned version. A drift
+      # in either changes the pyemscripten ABI tag, hence the exact pin.
+      - name: Cache pyodide xbuildenv + emsdk
+        id: cache-xbuildenv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pyodide-build
+          key: pyodide-xbuildenv-${{ env.XBUILDENV_VERSION }}-${{ runner.os }}
+
+      - name: Install pyodide xbuildenv + emsdk
+        run: |
+          if [ "${{ steps.cache-xbuildenv.outputs.cache-hit }}" != "true" ]; then
+            pyodide xbuildenv install "${XBUILDENV_VERSION}" --force
+          fi
+          pyodide xbuildenv use "${XBUILDENV_VERSION}"
+          pyodide xbuildenv install-emscripten
+          pyodide config list
+
+      # oneTBB is cross-compiled once and reused; keyed on its version + the
+      # build driver (whose flags shape the TBB build).
+      - name: Cache oneTBB wasm build
+        id: cache-onetbb
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/pyodide-spike/tbb
+            build/pyodide-spike/downloads
+          key: onetbb-${{ env.ONETBB_VERSION }}-${{ runner.os }}-${{ hashFiles('build_scripts/pyodide/build_spike.py') }}
+
+      - name: Build USD for Pyodide (shared libusd_ms.so + extensions)
+        run: |
+          SKIP_ONETBB=""
+          if [ "${{ steps.cache-onetbb.outputs.cache-hit }}" == "true" ]; then
+            SKIP_ONETBB="--skip-onetbb"
+          fi
+          python build_scripts/pyodide/build_spike.py \
+            --build-target install ${SKIP_ONETBB}
+
+      - name: Package the grill-usd-core wheel
+        run: |
+          EXTRA_ARGS=()
+          if [ -n "${{ inputs.version }}" ]; then
+            EXTRA_ARGS+=(--version "${{ inputs.version }}")
+          elif [ -n "${{ inputs.post }}" ]; then
+            EXTRA_ARGS+=(--post "${{ inputs.post }}")
+          fi
+          python build_scripts/pyodide/package_wheel.py \
+            --dist-name grill-usd-core \
+            --output-dir dist/pyodide "${EXTRA_ARGS[@]}"
+          ls -l dist/pyodide/
+
+      # package_wheel.py already ran twine check --strict; keep an explicit
+      # gate so a packaging change cannot silently drop it.
+      - name: twine check
+        run: twine check --strict dist/pyodide/*.whl
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Node smoke test (micropip install + round-trip)
+        working-directory: build_scripts/pyodide
+        run: |
+          npm ci
+          node test_usd_import.mjs ../../dist/pyodide/grill_usd_core-*.whl
+
+      - name: pyodide venv smoke test (pip install + round-trip)
+        run: |
+          build_scripts/pyodide/test_pyodide_venv.sh \
+            dist/pyodide/grill_usd_core-*.whl
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: grill-usd-core-wheel
+          path: dist/pyodide/*.whl
+          if-no-files-found: error
+
+  publish-testpypi:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.publish == 'testpypi'
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      id-token: write  # PyPI Trusted Publishing (OIDC)
+    steps:
+      - name: Download wheel artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: grill-usd-core-wheel
+          path: dist
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: dist
+
+  publish-pypi:
+    needs: build
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.publish == 'pypi') ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/pyodide-v'))
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write  # PyPI Trusted Publishing (OIDC)
+    steps:
+      - name: Download wheel artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: grill-usd-core-wheel
+          path: dist
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
