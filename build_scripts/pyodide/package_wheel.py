@@ -93,10 +93,45 @@ pluginfo_files = [
     if os.path.isfile(f)
 ]
 
+with open("README.md", encoding="utf-8") as fh:
+    long_description = fh.read()
+
 setuptools.setup(
     name="@DIST_NAME@",
     version="@VERSION@",
-    description="Pixar's Universal Scene Description (Pyodide 314 / wasm32)",
+    description=(
+        "Unofficial, experimental WebAssembly (Pyodide 314 / wasm32) build "
+        "of Pixar's Universal Scene Description (usd-core module set)"
+    ),
+    long_description=long_description,
+    long_description_content_type="text/markdown",
+    # OpenUSD's terms (Tomorrow Open Source Technology License 1.0), matching
+    # the official usd-core metadata; LICENSE.txt ships in the dist-info.
+    license="LicenseRef-TOST-1.0",
+    license_files=["LICENSE.txt"],
+    author="Christian López Barrón (unofficial wasm build of Pixar's OpenUSD)",
+    author_email="chris.gfz@gmail.com",
+    url="https://github.com/chrizzFTD/OpenUSD",
+    project_urls={
+        "Source": "https://github.com/chrizzFTD/OpenUSD",
+        "Build scripts": (
+            "https://github.com/chrizzFTD/OpenUSD/tree/release/build_scripts/pyodide"
+        ),
+        "Roadmap": (
+            "https://github.com/chrizzFTD/OpenUSD/blob/release/docs/pyodide/PLAN.md"
+        ),
+        "Browser demo": (
+            "https://github.com/chrizzFTD/OpenUSD/tree/release/extras/pyodide/demo"
+        ),
+        "OpenUSD (upstream)": "https://openusd.org",
+    },
+    classifiers=[
+        "Development Status :: 3 - Alpha",
+        "Environment :: WebAssembly :: Emscripten",
+        "Intended Audience :: Developers",
+        "Programming Language :: Python :: 3.14",
+        "Topic :: Multimedia :: Graphics :: 3D Modeling",
+    ],
     packages=setuptools.find_packages(PYTHON_LIB_DIR),
     package_dir={"": PYTHON_LIB_DIR},
     # package_data is authoritative here: the staging tree is not a VCS
@@ -129,7 +164,15 @@ def ensure_wheel_cli() -> None:
         wheel_shim.chmod(0o755)
 
 
-def detect_version(inst: pathlib.Path, override: str | None) -> str:
+def detect_version(
+    inst: pathlib.Path, override: str | None, post: int | None = None
+) -> str:
+    """USD version from pxr.h, optionally with a PEP 440 .postN segment.
+
+    ``--version`` (override) wins outright (for .devN / aN TestPyPI builds);
+    ``--post N`` appends .postN for re-publishes of the same USD version
+    (PyPI files are immutable, so every re-upload needs a new version).
+    """
     if override:
         return override
     header = inst / "include" / "pxr" / "pxr.h"
@@ -142,9 +185,10 @@ def detect_version(inst: pathlib.Path, override: str | None) -> str:
             m = re.match(r"#define PXR_PATCH_VERSION (\d+)", line)
             if m:
                 patch = m.group(1)
-    if minor is not None and patch is not None:
-        return f"{minor}.{patch}"
-    return "0.0.0"
+    version = f"{minor}.{patch}" if minor is not None and patch is not None else "0.0.0"
+    if post is not None:
+        version += f".post{post}"
+    return version
 
 
 def stage_wheel(
@@ -197,7 +241,11 @@ def stage_wheel(
     init_py = pxr_dst / "__init__.py"
     init_py.write_text(init_py.read_text() + PLUGIN_PATH_BOOTSTRAP)
 
-    # 4. Emit setup.py.
+    # 4. Stage the PyPI long_description README and the OpenUSD license.
+    shutil.copy2(SCRIPT_DIR / "pypi_readme.md", stage_dir / "README.md")
+    shutil.copy2(REPO_ROOT / "LICENSE.txt", stage_dir / "LICENSE.txt")
+
+    # 5. Emit setup.py.
     (stage_dir / "setup.py").write_text(
         SETUP_PY_TEMPLATE
         .replace("@DIST_NAME@", dist_name)
@@ -247,6 +295,11 @@ def build_and_repair(
     return repaired
 
 
+def twine_check(wheel: pathlib.Path) -> None:
+    """Validate the wheel's PyPI metadata; fail packaging on error."""
+    run([sys.executable, "-m", "twine", "check", "--strict", str(wheel)])
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Package the grill-usd-core Pyodide wheel"
@@ -276,7 +329,23 @@ def main() -> None:
         default=REPO_ROOT / "dist" / "pyodide",
         help="directory for repaired wheel output",
     )
-    parser.add_argument("--version", default=None, help="wheel version override")
+    parser.add_argument(
+        "--version",
+        default=None,
+        help="wheel version override (e.g. 26.8.dev1 for TestPyPI iteration)",
+    )
+    parser.add_argument(
+        "--post",
+        type=int,
+        default=None,
+        help="append a PEP 440 .postN segment to the pxr.h-derived version "
+             "(re-publish of the same USD version; ignored with --version)",
+    )
+    parser.add_argument(
+        "--skip-twine-check",
+        action="store_true",
+        help="skip the twine check metadata validation of the built wheel",
+    )
     parser.add_argument(
         "--stage-dir",
         type=pathlib.Path,
@@ -290,7 +359,7 @@ def main() -> None:
         sys.exit(1)
 
     inst = args.inst or (args.build_root / "inst")
-    version = detect_version(inst, args.version)
+    version = detect_version(inst, args.version, args.post)
     stage_dir = args.stage_dir or (args.build_root / "wheel-stage")
 
     libdir, stage_dir = stage_wheel(
@@ -299,6 +368,8 @@ def main() -> None:
     wheel = build_and_repair(
         stage_dir=stage_dir, libdir=libdir, output_dir=args.output_dir
     )
+    if not args.skip_twine_check:
+        twine_check(wheel)
     print(f"\nRepaired {args.dist_name} wheel: {wheel}")
 
 
