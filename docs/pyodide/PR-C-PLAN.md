@@ -242,8 +242,20 @@ these one-time account steps and the workflow dispatches need the maintainer:
 4. **PyPI release**: dispatch with `publish: pypi` (no version override →
    `26.8` from `pxr.h`), or push a `pyodide-v*` tag. Re-publishes of the same
    USD version use the `post` input (`26.8.postN`).
+
+   > **Done for `26.8`** (2026-07-04, via a maintainer PyPI API token — the
+   > same locally built + fully validated wheel as the TestPyPI dry-run):
+   > [pypi.org/project/grill-usd-core/26.8](https://pypi.org/project/grill-usd-core/26.8/).
+   > The name is claimed on PyPI too, so the trusted publisher is likewise
+   > added on the *project* (Manage → Publishing). Future releases (e.g.
+   > `26.8.postN`, next USD versions) should go through the workflow.
 5. Validate: `node build_scripts/pyodide/test_usd_import.mjs grill-usd-core`
    and the browser demo (`extras/pyodide/demo/`, `packages="grill-usd-core"`).
+
+   > **Done for `26.8`**: Node harness installing by bare name from the
+   > default index (micropip resolution + author/serialize round-trip),
+   > `pyodide venv` `pip install grill-usd-core`, and the browser demo with
+   > `packages="grill-usd-core"` all pass against the live PyPI package.
 
 ---
 

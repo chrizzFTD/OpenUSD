@@ -219,9 +219,14 @@ print("Cube size:", cube.GetSizeAttr().Get())
   [test.pypi.org](https://test.pypi.org/project/grill-usd-core/) and validated
   end-to-end (Node harness `index_urls` install + `pyodide venv` pip install
   from the TestPyPI index; metadata renders correctly)
-- [ ] Maintainer: configure Trusted Publishing (TestPyPI + PyPI) + the
-  `testpypi`/`pypi` GitHub environments, land the workflow on the default
-  branch, then run the PyPI publish workflow (see PR-C-PLAN §4.4)
+- [x] PyPI release: [`grill-usd-core==26.8`](https://pypi.org/project/grill-usd-core/26.8/)
+  published and validated end-to-end — `micropip.install("grill-usd-core")`
+  from the default index (Node harness), `pyodide venv` pip install, and the
+  browser demo running `packages="grill-usd-core"` live from PyPI
+- [ ] Maintainer: attach Trusted Publishers to the now-existing
+  `grill-usd-core` projects on TestPyPI + PyPI (Manage → Publishing), create
+  the `testpypi`/`pypi` GitHub environments, and land the workflow on the
+  default branch so future releases go through CI (see PR-C-PLAN §4.4)
 - [x] Repoint the browser demo at `packages="grill-usd-core"` (keep the
   local-wheel path for development)
 
