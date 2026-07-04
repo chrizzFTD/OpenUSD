@@ -13,23 +13,28 @@
 <body>
   <h1>OpenUSD Python (Pyodide 314)</h1>
   <p>
-    Full <code>usd-core</code> wheel (shared <code>libusd_ms.so</code> side
-    module) running under
+    <a href="https://pypi.org/project/grill-usd-core/"><code>grill-usd-core</code></a>
+    (the unofficial wasm build of the <code>usd-core</code> module set; shared
+    <code>libusd_ms.so</code> side module) running under
     <a href="https://github.com/chrizzFTD/pyrepl-web/tree/grill">pyrepl-web grill</a>
-    (Pyodide 314). Copy the <code>usd_core-*.whl</code> into this directory and
-    update the <code>packages=</code> filename below to match its version.
+    (Pyodide 314), micropip-installed from PyPI.
   </p>
 
   <!--
-    `packages` installs the co-hosted wheel via micropip and is awaited BEFORE
-    the REPL/replay starts (unlike a `src` script, which pyrepl exec's
-    synchronously and cannot await an install). `src` then runs a silent
-    startup import, and `replay-src` types the guided demo into the REPL.
+    `packages` is micropip-installed and awaited BEFORE the REPL/replay starts
+    (unlike a `src` script, which pyrepl exec's synchronously and cannot await
+    an install). `src` then runs a silent startup import, and `replay-src`
+    types the guided demo into the REPL.
+
+    "grill-usd-core" resolves the pyemscripten_2026_0_wasm32 wheel from PyPI.
+    For offline development against a locally built wheel, copy it into this
+    directory and use the local path instead, e.g.:
+      packages="./grill_usd_core-26.8-cp314-cp314-pyemscripten_2026_0_wasm32.whl"
   -->
   <py-repl
     theme="catppuccin-mocha"
     repl-title="USD Python (Pyodide 314)"
-    packages="./usd_core-26.8-cp314-cp314-pyemscripten_2026_0_wasm32.whl"
+    packages="grill-usd-core"
     src="./bootstrap.py"
     replay-src="./usd_demo.py"
     no-buttons

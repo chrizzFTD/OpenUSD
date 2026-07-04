@@ -102,7 +102,12 @@ def download_onetbb(dest: pathlib.Path) -> pathlib.Path:
     return src_dir
 
 
-def build_onetbb(onetbb_src: pathlib.Path, install_dir: pathlib.Path, env: dict) -> None:
+def build_onetbb(
+    onetbb_src: pathlib.Path,
+    install_dir: pathlib.Path,
+    env: dict,
+    build_type: str = "MinSizeRel",
+) -> None:
     build_dir = onetbb_src.parent / "onetbb-build"
     if (install_dir / "lib" / "libtbb.a").exists():
         print(f"oneTBB already built at {install_dir}")
@@ -115,7 +120,11 @@ def build_onetbb(onetbb_src: pathlib.Path, install_dir: pathlib.Path, env: dict)
     cmake_args = [
         "emcmake", "cmake",
         f"-DCMAKE_INSTALL_PREFIX={install_dir}",
-        "-DCMAKE_BUILD_TYPE=Release",
+        f"-DCMAKE_BUILD_TYPE={build_type}",
+        # Emscripten's -Oz is smaller than CMake's MinSizeRel default (-Os);
+        # oneTBB objects are archived into the shipped libusd_ms.so monolith.
+        "-DCMAKE_CXX_FLAGS_MINSIZEREL=-Oz -DNDEBUG",
+        "-DCMAKE_C_FLAGS_MINSIZEREL=-Oz -DNDEBUG",
         "-DBUILD_SHARED_LIBS=OFF",
         "-DTBB_TEST=OFF",
         "-DTBB_STRICT=OFF",
@@ -148,6 +157,7 @@ def configure_usd(
     install_dir: pathlib.Path,
     tbb_dir: pathlib.Path,
     env: dict,
+    build_type: str = "MinSizeRel",
 ) -> None:
     python_executable = pyodide_config("interpreter")
     python_include = pyodide_config("python_include_dir")
@@ -160,7 +170,17 @@ def configure_usd(
         "emcmake", "cmake",
         f"-DCMAKE_TOOLCHAIN_FILE={toolchain}",
         f"-DCMAKE_INSTALL_PREFIX={install_dir}",
-        f"-DCMAKE_BUILD_TYPE=Release",
+        f"-DCMAKE_BUILD_TYPE={build_type}",
+        # Size measurements (PR-C): counter-intuitively, a MinSizeRel/-Oz
+        # compile yields a *larger* libusd_ms.so than -O3 for this codebase
+        # (34.4 MB vs 30.0 MB) — -O3's aggressive inlining + GVN removes more
+        # code than -Oz's size heuristics save. Release stays the default;
+        # the actual size win is the post-link `wasm-opt -Oz` pass in
+        # package_wheel.py (30.0 -> 27.5 MB on the -O3 monolith). MinSizeRel
+        # (mapped to -Oz, smaller than CMake's -Os default) is kept for
+        # future re-measurement.
+        "-DCMAKE_CXX_FLAGS_MINSIZEREL=-Oz -DNDEBUG",
+        "-DCMAKE_C_FLAGS_MINSIZEREL=-Oz -DNDEBUG",
         f"-DCMAKE_FIND_ROOT_PATH={tbb_dir}",
         f"-DPython3_EXECUTABLE={python_executable}",
         f"-DPython3_INCLUDE_DIR={python_include}",
@@ -239,6 +259,16 @@ def main() -> None:
         action="store_true",
         help="Skip oneTBB build (use existing install in build-root/tbb)",
     )
+    parser.add_argument(
+        "--build-type",
+        default="Release",
+        choices=["Release", "MinSizeRel"],
+        help="CMake build type for oneTBB + USD. Release (-O3) is the "
+             "default and measured *smaller* than MinSizeRel (-Oz) for this "
+             "codebase; see configure_usd(). Changing it requires a clean "
+             "build-root (cached objects and the oneTBB install are not "
+             "invalidated automatically).",
+    )
     args = parser.parse_args()
 
     if shutil.which("pyodide") is None:
@@ -253,13 +283,14 @@ def main() -> None:
 
     if not args.skip_onetbb:
         onetbb_src = download_onetbb(args.build_root / "downloads")
-        build_onetbb(onetbb_src, tbb_install, env)
+        build_onetbb(onetbb_src, tbb_install, env, build_type=args.build_type)
 
     configure_usd(
         build_dir=usd_build,
         install_dir=args.inst,
         tbb_dir=tbb_install,
         env=env,
+        build_type=args.build_type,
     )
 
     if not args.configure_only:

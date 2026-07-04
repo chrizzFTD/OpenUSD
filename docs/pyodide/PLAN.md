@@ -190,11 +190,73 @@ print("Cube size:", cube.GetSizeAttr().Get())
 - OpenUSD owns only USD-specific assets: wheel, bootstrap, demo script, HTML glue
 - No parallel `loadPyodide` boilerplate to maintain in this repo
 
-### PR-C — CI + hardening
+### PR-C — CI, size hardening, and PyPI release as `grill-usd-core`
 
-- GitHub Actions: `pyodide xbuildenv install 314.0.2 --force`, build, smoke tests
-- Document private wheel install via pyrepl-web `bootstrap.py` pattern
-- Optional: CI job that builds wheel and smoke-tests import in `pyodide venv`
+> **Detailed design & implementation plan:** see [`PR-C-PLAN.md`](./PR-C-PLAN.md).
+> Key decision: publish the wasm wheel to **PyPI as `grill-usd-core`** (the
+> testing package for the Pyodide/wasm build of `usd-core`, distinct from
+> Pixar's official `usd-core` which has no wasm support). PEP 783 makes the
+> `pyemscripten_2026_0_wasm32` tag PyPI-installable, so consumers can
+> `micropip.install("grill-usd-core")` / `<py-repl packages="grill-usd-core">`.
+
+- [x] `package_wheel.py --dist-name` (default `grill-usd-core`; import name
+  stays `pxr`) → `grill_usd_core-<ver>-…-pyemscripten_2026_0_wasm32.whl` with
+  the monolith in `grill_usd_core.libs/`; Node harness re-validated after the
+  rename (R1 gate)
+- [x] Complete PyPI metadata (`pypi_readme.md` long description, TOST-1.0
+  license + bundled `LICENSE.txt`, `Environment :: WebAssembly :: Emscripten`
+  classifier, project URLs) + `twine check --strict` in the packager
+- [x] `pyodide venv` pip-install smoke test (`test_pyodide_venv.sh`) alongside
+  the Node harness
+- [x] Size hardening deferred from PR-B: post-link `wasm-opt -Oz` + strip on
+  `libusd_ms.so` in the packager (~8% smaller monolith; a `MinSizeRel`/`-Oz`
+  *compile* was measured and is larger than `-O3` here, so `Release` stays
+  the default — see `build_spike.py --build-type`)
+- [x] GitHub Actions (`.github/workflows/pyodide-wheel.yml`): xbuildenv +
+  oneTBB caching, build → package → `twine check` → Node + `pyodide venv`
+  smoke tests → publish via PyPI Trusted Publishing (TestPyPI first)
+- [x] TestPyPI dry-run: `grill-usd-core==26.8.dev1` published to
+  [test.pypi.org](https://test.pypi.org/project/grill-usd-core/) and validated
+  end-to-end (Node harness `index_urls` install + `pyodide venv` pip install
+  from the TestPyPI index; metadata renders correctly)
+- [x] PyPI release: [`grill-usd-core==26.8`](https://pypi.org/project/grill-usd-core/26.8/)
+  published and validated end-to-end — `micropip.install("grill-usd-core")`
+  from the default index (Node harness), `pyodide venv` pip install, and the
+  browser demo running `packages="grill-usd-core"` live from PyPI
+- [ ] Maintainer: attach Trusted Publishers to the now-existing
+  `grill-usd-core` projects on TestPyPI + PyPI (Manage → Publishing), create
+  the `testpypi`/`pypi` GitHub environments, and land the workflow on the
+  default branch so future releases go through CI (see PR-C-PLAN §4.4)
+- [x] Repoint the browser demo at `packages="grill-usd-core"` (keep the
+  local-wheel path for development)
+
+## Distribution
+
+The Pyodide wheel is distributed on **PyPI as
+[`grill-usd-core`](https://pypi.org/project/grill-usd-core/)** — an unofficial,
+experimental WebAssembly build of the `usd-core` module set (import name is
+still `pxr`). Consumption:
+
+```python
+import micropip
+await micropip.install("grill-usd-core")      # browser / Node (Pyodide 314)
+```
+
+```html
+<py-repl packages="grill-usd-core"></py-repl>  <!-- pyrepl-web grill -->
+```
+
+```bash
+pyodide venv .venv-pyodide                     # native PEP 783 install path
+.venv-pyodide/bin/pip install grill-usd-core
+```
+
+Wheels are built + published by `.github/workflows/pyodide-wheel.yml`
+(`workflow_dispatch` with `publish: testpypi|pypi`, or a `pyodide-v*` tag).
+Versions mirror USD (`26.8`), with `.postN` for re-publishes and `.devN` on
+TestPyPI (PyPI files are immutable). Local wheels remain fully supported for
+development (`packages="./grill_usd_core-*.whl"`, direct `micropip.install`
+URL, or a TestPyPI `index_urls`).
 
 ## Toolchain setup
 

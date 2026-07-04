@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
-"""Package the full usd-core Pyodide 314 wheel (PR-B).
+"""Package the usd-core Pyodide 314 wheel (PR-B), published as grill-usd-core (PR-C).
 
 Consumes a USD install tree produced by ``build_spike.py --build-target install``
 (cross-built for Emscripten / Pyodide 314) and produces a
-``usd_core-<ver>-cp314-cp314-pyemscripten_2026_0_wasm32.whl`` that ships the C++
-core once as a vendored ``.libs/libusd_ms.so`` shared side module, with thin
-``_*.so`` extension modules dynamically linking against it, plus the runtime
-plugin registry under ``pxr/pluginfo/``.
+``grill_usd_core-<ver>-cp314-cp314-pyemscripten_2026_0_wasm32.whl`` that ships
+the C++ core once as a vendored ``.libs/libusd_ms.so`` shared side module, with
+thin ``_*.so`` extension modules dynamically linking against it, plus the
+runtime plugin registry under ``pxr/pluginfo/``.
+
+The distribution name defaults to ``grill-usd-core`` (the unofficial testing
+package for the wasm build — distinct from Pixar's official ``usd-core``, which
+has no wasm wheels). Pass ``--dist-name usd-core`` for local parity testing;
+the import name is ``pxr`` either way.
 
 Layout mirrors the native PyPI relocation (build_scripts/pypi/package_files/
 setup.py) adapted for a single monolithic Emscripten side module.
@@ -88,10 +93,45 @@ pluginfo_files = [
     if os.path.isfile(f)
 ]
 
+with open("README.md", encoding="utf-8") as fh:
+    long_description = fh.read()
+
 setuptools.setup(
-    name="usd-core",
+    name="@DIST_NAME@",
     version="@VERSION@",
-    description="Pixar's Universal Scene Description (Pyodide 314 / wasm32)",
+    description=(
+        "Unofficial, experimental WebAssembly (Pyodide 314 / wasm32) build "
+        "of Pixar's Universal Scene Description (usd-core module set)"
+    ),
+    long_description=long_description,
+    long_description_content_type="text/markdown",
+    # OpenUSD's terms (Tomorrow Open Source Technology License 1.0), matching
+    # the official usd-core metadata; LICENSE.txt ships in the dist-info.
+    license="LicenseRef-TOST-1.0",
+    license_files=["LICENSE.txt"],
+    author="Christian López Barrón (unofficial wasm build of Pixar's OpenUSD)",
+    author_email="chris.gfz@gmail.com",
+    url="https://github.com/chrizzFTD/OpenUSD",
+    project_urls={
+        "Source": "https://github.com/chrizzFTD/OpenUSD",
+        "Build scripts": (
+            "https://github.com/chrizzFTD/OpenUSD/tree/release/build_scripts/pyodide"
+        ),
+        "Roadmap": (
+            "https://github.com/chrizzFTD/OpenUSD/blob/release/docs/pyodide/PLAN.md"
+        ),
+        "Browser demo": (
+            "https://github.com/chrizzFTD/OpenUSD/tree/release/extras/pyodide/demo"
+        ),
+        "OpenUSD (upstream)": "https://openusd.org",
+    },
+    classifiers=[
+        "Development Status :: 3 - Alpha",
+        "Environment :: WebAssembly :: Emscripten",
+        "Intended Audience :: Developers",
+        "Programming Language :: Python :: 3.14",
+        "Topic :: Multimedia :: Graphics :: 3D Modeling",
+    ],
     packages=setuptools.find_packages(PYTHON_LIB_DIR),
     package_dir={"": PYTHON_LIB_DIR},
     # package_data is authoritative here: the staging tree is not a VCS
@@ -115,6 +155,51 @@ def run(cmd: list[str], *, cwd: pathlib.Path | None = None) -> None:
     subprocess.run([str(c) for c in cmd], cwd=cwd, check=True)
 
 
+def find_wasm_opt() -> pathlib.Path | None:
+    """Locate Binaryen's wasm-opt (PATH first, then the pyodide emsdk)."""
+    found = shutil.which("wasm-opt")
+    if found:
+        return pathlib.Path(found)
+    try:
+        emsdk_dir = subprocess.run(
+            ["pyodide", "config", "get", "emsdk_dir"],
+            check=True, capture_output=True, text=True,
+        ).stdout.strip().strip('"')
+    except subprocess.CalledProcessError:
+        return None
+    candidate = pathlib.Path(emsdk_dir) / "upstream" / "bin" / "wasm-opt"
+    return candidate if candidate.is_file() else None
+
+
+def wasm_opt_monolith(
+    monolith: pathlib.Path, out_dir: pathlib.Path, wasm_opt: pathlib.Path
+) -> pathlib.Path:
+    """Post-link size pass over libusd_ms.so (PR-C size hardening).
+
+    Runs wasm-opt -Oz + strip passes on a *copy* of the monolith (the inst/
+    tree stays pristine) and returns the directory to use as the auditwheel
+    --libdir. Binaryen preserves the dylink.0 section (mem info + exports)
+    that Pyodide's loader needs; the thin _*.so extensions are left untouched
+    so auditwheel's RUNTIME_PATH rewrite is unaffected. Any behavior change
+    is gated by the Node + pyodide venv smoke tests.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    optimized = out_dir / monolith.name
+    run([
+        wasm_opt, "-Oz",
+        "--strip-debug", "--strip-producers",
+        "--all-features",
+        monolith, "-o", optimized,
+    ])
+    before = monolith.stat().st_size
+    after = optimized.stat().st_size
+    print(
+        f"wasm-opt {monolith.name}: {before:,} -> {after:,} bytes "
+        f"({100.0 * (before - after) / before:.1f}% smaller)"
+    )
+    return out_dir
+
+
 def ensure_wheel_cli() -> None:
     """auditwheel-emscripten invokes the ``wheel`` CLI."""
     wheel_shim = pathlib.Path.home() / ".local" / "bin" / "wheel"
@@ -124,7 +209,15 @@ def ensure_wheel_cli() -> None:
         wheel_shim.chmod(0o755)
 
 
-def detect_version(inst: pathlib.Path, override: str | None) -> str:
+def detect_version(
+    inst: pathlib.Path, override: str | None, post: int | None = None
+) -> str:
+    """USD version from pxr.h, optionally with a PEP 440 .postN segment.
+
+    ``--version`` (override) wins outright (for .devN / aN TestPyPI builds);
+    ``--post N`` appends .postN for re-publishes of the same USD version
+    (PyPI files are immutable, so every re-upload needs a new version).
+    """
     if override:
         return override
     header = inst / "include" / "pxr" / "pxr.h"
@@ -137,13 +230,14 @@ def detect_version(inst: pathlib.Path, override: str | None) -> str:
             m = re.match(r"#define PXR_PATCH_VERSION (\d+)", line)
             if m:
                 patch = m.group(1)
-    if minor is not None and patch is not None:
-        return f"{minor}.{patch}"
-    return "0.0.0"
+    version = f"{minor}.{patch}" if minor is not None and patch is not None else "0.0.0"
+    if post is not None:
+        version += f".post{post}"
+    return version
 
 
 def stage_wheel(
-    *, inst: pathlib.Path, stage_dir: pathlib.Path, version: str
+    *, inst: pathlib.Path, stage_dir: pathlib.Path, version: str, dist_name: str
 ) -> tuple[pathlib.Path, pathlib.Path]:
     """Assemble the wheel staging tree from the USD install directory."""
     pxr_src = inst / "lib" / "python" / "pxr"
@@ -192,9 +286,15 @@ def stage_wheel(
     init_py = pxr_dst / "__init__.py"
     init_py.write_text(init_py.read_text() + PLUGIN_PATH_BOOTSTRAP)
 
-    # 4. Emit setup.py.
+    # 4. Stage the PyPI long_description README and the OpenUSD license.
+    shutil.copy2(SCRIPT_DIR / "pypi_readme.md", stage_dir / "README.md")
+    shutil.copy2(REPO_ROOT / "LICENSE.txt", stage_dir / "LICENSE.txt")
+
+    # 5. Emit setup.py.
     (stage_dir / "setup.py").write_text(
-        SETUP_PY_TEMPLATE.replace("@VERSION@", version)
+        SETUP_PY_TEMPLATE
+        .replace("@DIST_NAME@", dist_name)
+        .replace("@VERSION@", version)
     )
 
     return inst / "lib", stage_dir
@@ -240,8 +340,22 @@ def build_and_repair(
     return repaired
 
 
+def twine_check(wheel: pathlib.Path) -> None:
+    """Validate the wheel's PyPI metadata; fail packaging on error."""
+    run([sys.executable, "-m", "twine", "check", "--strict", str(wheel)])
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Package the usd-core Pyodide wheel")
+    parser = argparse.ArgumentParser(
+        description="Package the grill-usd-core Pyodide wheel"
+    )
+    parser.add_argument(
+        "--dist-name",
+        default="grill-usd-core",
+        help="distribution (PyPI) name; drives the wheel filename and the "
+             "vendored <name>.libs/ directory. Use 'usd-core' for local "
+             "parity testing. The import name is always 'pxr'.",
+    )
     parser.add_argument(
         "--build-root",
         type=pathlib.Path,
@@ -260,7 +374,28 @@ def main() -> None:
         default=REPO_ROOT / "dist" / "pyodide",
         help="directory for repaired wheel output",
     )
-    parser.add_argument("--version", default=None, help="wheel version override")
+    parser.add_argument(
+        "--version",
+        default=None,
+        help="wheel version override (e.g. 26.8.dev1 for TestPyPI iteration)",
+    )
+    parser.add_argument(
+        "--post",
+        type=int,
+        default=None,
+        help="append a PEP 440 .postN segment to the pxr.h-derived version "
+             "(re-publish of the same USD version; ignored with --version)",
+    )
+    parser.add_argument(
+        "--skip-twine-check",
+        action="store_true",
+        help="skip the twine check metadata validation of the built wheel",
+    )
+    parser.add_argument(
+        "--no-wasm-opt",
+        action="store_true",
+        help="skip the wasm-opt -Oz/strip size pass over libusd_ms.so",
+    )
     parser.add_argument(
         "--stage-dir",
         type=pathlib.Path,
@@ -274,14 +409,31 @@ def main() -> None:
         sys.exit(1)
 
     inst = args.inst or (args.build_root / "inst")
-    version = detect_version(inst, args.version)
+    version = detect_version(inst, args.version, args.post)
     stage_dir = args.stage_dir or (args.build_root / "wheel-stage")
 
-    libdir, stage_dir = stage_wheel(inst=inst, stage_dir=stage_dir, version=version)
+    libdir, stage_dir = stage_wheel(
+        inst=inst, stage_dir=stage_dir, version=version, dist_name=args.dist_name
+    )
+    if not args.no_wasm_opt:
+        wasm_opt = find_wasm_opt()
+        if wasm_opt is None:
+            print(
+                "ERROR: wasm-opt not found (PATH or pyodide emsdk); "
+                "pass --no-wasm-opt to skip the size pass",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        libdir = wasm_opt_monolith(
+            libdir / "libusd_ms.so", stage_dir / "libs-opt", wasm_opt
+        )
     wheel = build_and_repair(
         stage_dir=stage_dir, libdir=libdir, output_dir=args.output_dir
     )
-    print(f"\nRepaired usd-core wheel: {wheel}")
+    if not args.skip_twine_check:
+        twine_check(wheel)
+    print(f"\nRepaired {args.dist_name} wheel: {wheel} "
+          f"({wheel.stat().st_size:,} bytes)")
 
 
 if __name__ == "__main__":

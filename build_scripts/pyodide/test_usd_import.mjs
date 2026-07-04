@@ -1,9 +1,14 @@
 /**
- * PR-B smoke test: import the full usd-core module set under Pyodide 314 and
+ * Smoke test: import the full usd-core module set under Pyodide 314 and
  * author + serialize a stage round-trip (Node harness, no browser).
  *
  * Usage (from repo root, after package_wheel.py):
- *   node build_scripts/pyodide/test_usd_import.mjs dist/pyodide/usd_core-*.whl
+ *   node build_scripts/pyodide/test_usd_import.mjs dist/pyodide/grill_usd_core-*.whl
+ *
+ * Or against a published package (PR-C; e.g. the TestPyPI/PyPI validation):
+ *   node build_scripts/pyodide/test_usd_import.mjs grill-usd-core
+ *   node build_scripts/pyodide/test_usd_import.mjs grill-usd-core \
+ *       https://test.pypi.org/simple
  *
  * Set TF_DEBUG=PLUG_INFO_SEARCH in the environment to trace plugin discovery.
  *
@@ -14,7 +19,7 @@
  *   - authoring + .usda serialization round-trip.
  */
 import { createServer } from "node:http";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { loadPyodide } from "pyodide";
 
@@ -68,20 +73,35 @@ usda
 
 async function main() {
   const wheelArg = process.argv[2];
+  const indexUrl = process.argv[3];
   if (!wheelArg) {
-    console.error("Usage: node test_usd_import.mjs <path-to-wheel>");
+    console.error(
+      "Usage: node test_usd_import.mjs <path-to-wheel | package-name> [index-url]",
+    );
     process.exit(1);
   }
-  const wheelPath = resolve(wheelArg);
-  const { url, close } = await serveWheel(wheelPath);
 
-  console.log(`Loading Pyodide 314 and installing wheel from ${url}`);
+  // A .whl on disk is served over a local HTTP server; anything else is a
+  // requirement resolved by micropip from PyPI (or index-url, e.g. TestPyPI).
+  let installTarget;
+  let close = () => {};
+  if (wheelArg.endsWith(".whl") && existsSync(resolve(wheelArg))) {
+    ({ url: installTarget, close } = await serveWheel(resolve(wheelArg)));
+  } else {
+    installTarget = wheelArg;
+  }
+  const indexKwarg = indexUrl ? `, index_urls=["${indexUrl}"]` : "";
+
+  console.log(
+    `Loading Pyodide 314 and installing ${installTarget}` +
+      (indexUrl ? ` from ${indexUrl}` : ""),
+  );
   const pyodide = await loadPyodide();
 
   await pyodide.loadPackage("micropip");
   await pyodide.runPythonAsync(`
 import micropip
-await micropip.install("${url}")
+await micropip.install("${installTarget}"${indexKwarg})
 `);
 
   const usda = await pyodide.runPythonAsync(TEST_SNIPPET);

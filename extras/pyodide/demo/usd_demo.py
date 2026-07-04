@@ -1,4 +1,4 @@
-"""Guided USD scripting demo (Pyodide 314, full usd-core wheel).
+"""Guided USD scripting demo (Pyodide 314, full grill-usd-core wheel).
 
 Authors a small stage, exercises a few schemas, and serializes to .usda to
 prove the shared libusd_ms.so side module + plugin registry work in-browser.
