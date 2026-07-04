@@ -1,6 +1,7 @@
 # PR-B — Full `usd-core` Module Set + Private Wheel + Browser Demo
 
-**Status:** design / implementation plan (not yet implemented)
+**Status:** implemented (see `PLAN.md` PR-B checkboxes for the as-built result
+and the two timing/embed deviations required by Pyodide's eager `.so` loading)
 **Branch base:** `cursor/pyodide-tf-spike-7911` (PR-A merged into the spike)
 **Target branch:** `cursor/pyodide-pr-b-*`
 **Scope:** all work stays in this OpenUSD fork; consume

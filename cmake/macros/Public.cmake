@@ -1099,10 +1099,14 @@ function(pxr_setup_plugins)
         RENAME "plugInfo.json"
     )
 
-    # For emscripten builds, we need to ensure that the top level plugInfo.json
-    # file is included in the resulting application bundle.  When installing,
-    # we are sure to reference the installed location of this file.
-    if (EMSCRIPTEN)
+    # For the C++ wasm-embed path, ensure the top-level plugInfo.json is baked
+    # into the application bundle's virtual FS. This is PUBLIC so it propagates
+    # through linking to every dependent; under Pyodide that would embed the
+    # same /usd/plugInfo.json into libusd_ms.so AND every _*.so, and loading a
+    # second module that recreates the file aborts with EEXIST. Pyodide instead
+    # ships plugInfo as wheel package data discovered via PXR_PLUGINPATH_NAME
+    # (see the pxr/__init__.py bootstrap), so gate this to the non-Pyodide path.
+    if (EMSCRIPTEN AND NOT PXR_BUILD_PYODIDE)
         foreach(lib ${PXR_CORE_LIBS})
           target_link_options(${lib} PUBLIC
               "$<BUILD_INTERFACE:SHELL:--embed-file ${CMAKE_CURRENT_BINARY_DIR}/plugins_plugInfo.json@/usd/plugInfo.json>"
@@ -1195,10 +1199,13 @@ function(pxr_toplevel_prologue)
             )
 
             # Our monolithic library.
-            # Pyodide extension modules link the static monolith with
-            # WHOLE_ARCHIVE; a separate libusd_ms.so SIDE_MODULE is not
-            # loadable in the browser (pthread/env symbol issues).
-            if(BUILD_SHARED_LIBS AND NOT (EMSCRIPTEN AND PXR_BUILD_PYODIDE))
+            # Under Pyodide we ship the C++ core once as a shared side module
+            # (libusd_ms.so, -sSIDE_MODULE=1) vendored into the wheel's .libs/,
+            # with thin _*.so extensions dynamically linking against it. This
+            # replaces PR-A's per-module static WHOLE_ARCHIVE monolith, which
+            # would duplicate the whole codebase ~30x, and gives every module
+            # one shared Boost.Python / TfType registry.
+            if(BUILD_SHARED_LIBS)
                 set(libType SHARED)
                 set(libName "usd_ms")
             else()
@@ -1290,7 +1297,12 @@ function(pxr_toplevel_epilogue)
             target_compile_definitions(${lib} PRIVATE ${exports})
         endforeach()
 
-        if(BUILD_SHARED_LIBS AND NOT (EMSCRIPTEN AND PXR_BUILD_PYODIDE))
+        if(BUILD_SHARED_LIBS)
+            # Shared monolith (native usd_ms, or the Pyodide libusd_ms.so side
+            # module). Linking the OBJECT libraries pulls all their objects into
+            # the shared library; -sSIDE_MODULE=1 (added in the prologue for
+            # Pyodide) keeps every TF_REGISTRY_FUNCTION / moduleDeps static
+            # initializer alive, exactly as WHOLE_ARCHIVE did per-module in PR-A.
             target_link_libraries(usd_m
                 PUBLIC
                     ${PXR_OBJECT_LIBS}
@@ -1298,10 +1310,20 @@ function(pxr_toplevel_epilogue)
                     ${PXR_THREAD_LIBS}
             )
 
-            _pxr_init_rpath(rpath "${libInstallPrefix}")
-            _pxr_add_rpath(rpath "${CMAKE_INSTALL_PREFIX}/${PXR_INSTALL_SUBDIR}/lib")
-            _pxr_add_rpath(rpath "${CMAKE_INSTALL_PREFIX}/lib")
-            _pxr_install_rpath(rpath usd_m)
+            # Native install RPATHs do not apply to an Emscripten side module.
+            # Under Pyodide, the extension _*.so declare libusd_ms.so as a
+            # NEEDED dependency; pyodide's loader resolves it at load time by
+            # searching LD_LIBRARY_PATH (its DSO dir + site-packages), not via
+            # an ELF-style RPATH. (pyodide auditwheel repair does write a
+            # $ORIGIN RUNTIME_PATH into dylink.0, but this Emscripten 5.0.3
+            # loader does not consult it; discovery works through the search
+            # path instead.)
+            if(NOT (EMSCRIPTEN AND PXR_BUILD_PYODIDE))
+                _pxr_init_rpath(rpath "${libInstallPrefix}")
+                _pxr_add_rpath(rpath "${CMAKE_INSTALL_PREFIX}/${PXR_INSTALL_SUBDIR}/lib")
+                _pxr_add_rpath(rpath "${CMAKE_INSTALL_PREFIX}/lib")
+                _pxr_install_rpath(rpath usd_m)
+            endif()
         else()
             foreach(lib ${PXR_OBJECT_LIBS})
                 target_link_libraries(usd_m

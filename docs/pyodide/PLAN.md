@@ -33,14 +33,22 @@ Two WASM modes coexist on the fork:
 └───────────────────────────────┴─────────────────────────────────┘
 ```
 
-Pyodide wheel layout (PR-A spike: static monolith inside `_tf.so`; PR-B may revisit vendored `.libs`):
+Pyodide wheel layout (PR-B decided: C++ core shipped once as a shared side
+module in `.libs/`, with thin per-module extensions dynamically linking it):
 
 ```
-usd_tf_pyodide_spike-*.whl
+usd_core-*.whl
 ├── pxr/
-│   ├── __init__.py
-│   └── Tf/_tf.so          ← SIDE_MODULE=2; static usd_m via WHOLE_ARCHIVE
+│   ├── __init__.py        ← __all__ + runtime plugin registration bootstrap
+│   ├── pluginfo/          ← plugInfo.json + schema resources
+│   ├── Tf/_tf.so          ← SIDE_MODULE=2; NEEDED libusd_ms.so
+│   ├── … (all ~29 modules)
+└── usd_core.libs/
+    └── libusd_ms.so       ← SIDE_MODULE=1; the C++ core, vendored once
 ```
+
+(PR-A spike shipped a single `usd_tf_pyodide_spike-*.whl` with the static
+monolith embedded inside `_tf.so` via WHOLE_ARCHIVE.)
 
 ## PR roadmap (fork)
 
@@ -71,10 +79,27 @@ pre-built REPL runtime (Pyodide 314) — **no changes to the pyrepl-web repo**.
 
 **Build & package**
 
-- Shared `libusd_ms.so` SIDE_MODULE + thin per-module `_*.so` extensions (same module list as PyPI CI)
-- `build_scripts/pyodide/package_wheel.py` + `pxr/pluginfo/` layout (mirror PyPI relocation)
-- Runtime plugin discovery via `PXR_PLUGINPATH_NAME` set in top-level `pxr/__init__.py`
-- Private `pyemscripten_2026_0_wasm32` wheel (served alongside the demo static files)
+- [x] Shared `libusd_ms.so` SIDE_MODULE + thin per-module `_*.so` extensions (~29 modules; no imaging)
+- [x] `build_scripts/pyodide/package_wheel.py` + `pxr/pluginfo/` layout (mirror PyPI relocation)
+- [x] Runtime plugin discovery — see note below; `pxr/__init__.py` actively calls
+  `Plug.Registry().RegisterPlugins()` (not just `PXR_PLUGINPATH_NAME`)
+- [x] Private `usd_core-*-pyemscripten_2026_0_wasm32` wheel, loaded + round-tripped in the Node harness
+- [x] Browser demo (`extras/pyodide/demo/`) runs `usd_demo.py` under pyrepl-web `grill`
+
+Two implementation deviations from `PR-B-PLAN.md` were required (both because
+Pyodide **eagerly loads every extension `.so` at wheel-install time**, unlike a
+lazy native import):
+
+1. **Plugin path timing.** `Plug_InitConfig` (an `ARCH_CONSTRUCTOR`) reads
+   `PXR_PLUGINPATH_NAME` when `libusd_ms.so` loads — during install, before
+   `import pxr` runs. So the env var set in `pxr/__init__.py` is too late; the
+   bootstrap instead calls `Plug.Registry().RegisterPlugins(pxr/pluginfo)` at
+   import to augment the already-initialized registry (env var kept as fallback).
+2. **No embedded plugInfo in side modules.** `pxr_setup_plugins()`'s
+   `--embed-file` for the top-level `plugInfo.json` is `PUBLIC` and propagates
+   through linking, so every module embedded the same `/usd/plugInfo.json`;
+   loading a second module aborted with `EEXIST`. Gated off for Pyodide
+   (`EMSCRIPTEN AND NOT PXR_BUILD_PYODIDE`), matching the resource-file gate.
 
 **Browser demo (this repo)**
 
@@ -115,35 +140,30 @@ flowchart LR
     B -->|py-repl + micropip| D[Browser\nimport pxr.Usd]
 ```
 
-**`extras/pyodide/demo/index.html`** (sketch):
+**`extras/pyodide/demo/index.html`** (as implemented):
 
 ```html
-<!-- pyrepl.js built from chrizzFTD/pyrepl-web @ grill (sibling clone or pinned URL) -->
-<script src="/path/to/pyrepl-web/dist/pyrepl.js"></script>
+<!-- pyrepl.js served same-origin under /pyrepl/ by server.py (single origin so
+     the wrapper's dynamic ES-module import needs no cross-origin CORS). -->
+<script src="/pyrepl/pyrepl.js"></script>
 
 <py-repl
   theme="catppuccin-mocha"
   repl-title="USD Python (Pyodide 314)"
-  src="/bootstrap.py"
-  replay-src="/usd_demo.py"
+  packages="./usd_core-<ver>-cp314-cp314-pyemscripten_2026_0_wasm32.whl"
+  src="./bootstrap.py"
+  replay-src="./usd_demo.py"
   no-buttons
 ></py-repl>
 ```
 
-**`extras/pyodide/demo/bootstrap.py`** — install our wheel (served from the same static origin):
-
-```python
-import micropip
-
-# Relative URL works when wheel is co-hosted with the demo page.
-WHEEL_URL = "./usd_core-26.x.x-cp314-pyemscripten_2026_0_wasm32.whl"
-
-async def _install():
-    await micropip.install(WHEEL_URL)
-
-import asyncio
-asyncio.ensure_future(_install())
-```
+The wheel is installed via the `packages` attribute (pyrepl `await`s
+`micropip.install(packages)` **before** starting the REPL/replay). A `src`
+startup script cannot install it: pyrepl exec's `src` synchronously, so an
+`asyncio.ensure_future(micropip.install(...))` there races the replay.
+`bootstrap.py` is therefore a silent `import pxr` (runs the wheel's bundled
+plugin registration); `usd_demo.py` is the replayed demo. `server.py` serves the
+demo dir and mounts the pyrepl-web `dist/` under `/pyrepl/` from one origin.
 
 **`extras/pyodide/demo/usd_demo.py`**:
 
@@ -198,14 +218,29 @@ first successful oneTBB build in `--build-root`.
 
 ## Known blockers
 
-1. **Boost.Python on Emscripten** — validated by PR-A `from pxr import Tf` + `Tf.StringSplit`
+1. **Boost.Python on Emscripten** — validated by PR-A `from pxr import Tf`; PR-B
+   confirms the shared cross-module converter registry (e.g. `Gf.Vec3d` into
+   `UsdGeom` authoring, serialized via `Sdf`) works with one `libusd_ms.so`
 2. **TBB + pthread** — oneTBB wasm build works; TBB still references some `pthread_*` stubs but load succeeds without `-pthread` compile flags
-3. **TfScriptModuleLoader** — Python `import` path should work; runtime `dlopen` plugins won't
+3. **TfScriptModuleLoader** — Python `import` path works across all ~29 modules; no runtime `dlopen` plugins needed (the monolithic core has empty `LibraryPath`)
 4. **Exception ABI** — must not mix `-fexceptions` objects with Pyodide `-fwasm-exceptions`
 5. **pyodide-build 0.36 vs 314** — use `xbuildenv install 314.0.2 --force` until compatibility metadata catches up
-6. **TfPyObjWrapper wasm32 ABI** — `shared_ptr` is 8 bytes on wasm32; stub sizes adjusted in `pyObjWrapper.h`
+6. **TfPyObjWrapper wasm32 ABI** — `shared_ptr` is 8 bytes on wasm32; stub sizes adjusted in `pyObjWrapper.h`. No further wasm32 ABI issues surfaced across the full module graph in PR-B
 7. **No `-pthread` on Pyodide wheels** — pyemscripten ABI forbids it; also omit `-pthread` compile flags (`gccclangshareddefaults.cmake`) so SIDE_MODULEs do not import `pthread_*` from `env`
-8. **Monolith packaging** — PR-A statically links `usd_m` into each extension via `WHOLE_ARCHIVE`; a separate `libusd_ms.so` SIDE_MODULE failed to load under Pyodide 314
+
+**Resolved in PR-B**
+
+8. ~~**Monolith packaging** — a separate `libusd_ms.so` SIDE_MODULE failed to
+   load under Pyodide 314.~~ **Resolved.** The shared-monolith model is the
+   decided layout: `libusd_ms.so` (`-sSIDE_MODULE=1`) is vendored into
+   `usd_core.libs/` and thin `_*.so` extensions (`-sSIDE_MODULE=2`) dynamically
+   link it. The original failure was **not** the side module itself but the
+   `--embed-file` top-level plugInfo baked (via `PUBLIC` link propagation) into
+   every module, causing an `EEXIST` when a second module reloaded the embedded
+   file. Gating the embed off for Pyodide fixed loading; plugin discovery then
+   works via runtime `Plug.Registry().RegisterPlugins()` (see PR-B notes above).
+   `pyodide auditwheel repair` vendors the lib and pyodide loads it via the
+   `LD_LIBRARY_PATH` (`DSO_DIR` / site-packages) search + NEEDED resolution.
 
 ## Out of scope (v1)
 

@@ -1,25 +1,13 @@
-"""Install the co-hosted usd-tf-pyodide-spike wheel before the REPL starts."""
-import asyncio
-import glob
-import micropip
+"""Silent startup script for the OpenUSD Pyodide demo.
 
+The usd-core wheel is installed via the ``packages`` attribute on the
+``<py-repl>`` element, which micropip-installs it and is awaited *before* this
+startup script and the replay run. (A ``src`` startup script cannot install the
+wheel itself because pyrepl exec's it synchronously and it cannot await
+``micropip.install``.)
 
-def _wheel_url() -> str:
-    wheels = sorted(glob.glob("./usd_tf_pyodide_spike-*.whl"))
-    if not wheels:
-        raise RuntimeError(
-            "No usd_tf_pyodide_spike-*.whl in demo directory. "
-            "Run package_tf_spike_wheel.py and copy the wheel here."
-        )
-    # Relative URL — same origin as this page.
-    return f"./{wheels[-1].split('/')[-1]}"
-
-
-async def _install() -> None:
-    url = _wheel_url()
-    print(f"Installing {url} …")
-    await micropip.install(url)
-    print("usd-tf-pyodide-spike installed.")
-
-
-asyncio.ensure_future(_install())
+Importing ``pxr`` here runs the wheel's bundled plugin-path bootstrap, which
+registers the vendored ``pxr/pluginfo/`` with the live Plug registry before the
+demo replay uses ``Sdf``/``Usd``.
+"""
+import pxr  # noqa: F401
