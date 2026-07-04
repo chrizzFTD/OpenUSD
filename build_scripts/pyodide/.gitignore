@@ -1,0 +1,3 @@
+# Pyodide cross-build / test artifacts
+/node_modules/pyodide/*.whl
+default.profraw
