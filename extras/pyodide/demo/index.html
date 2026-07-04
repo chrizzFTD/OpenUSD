@@ -2,25 +2,36 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>USD Tf — Pyodide 314 (pyrepl-web)</title>
+  <title>OpenUSD — Pyodide 314 (pyrepl-web)</title>
   <!--
     pyrepl.js from chrizzFTD/pyrepl-web @ grill (build with: bun run build).
-    Default assumes pyrepl dist is served at http://localhost:8766/pyrepl.js
+    Served same-origin under /pyrepl/ by server.py so the wrapper's dynamic
+    ES-module import resolves without cross-origin CORS headers.
   -->
-  <script src="http://localhost:8766/pyrepl.js"></script>
+  <script src="/pyrepl/pyrepl.js"></script>
 </head>
 <body>
-  <h1>USD Tf Pyodide spike</h1>
+  <h1>OpenUSD Python (Pyodide 314)</h1>
   <p>
-    Uses <a href="https://github.com/chrizzFTD/pyrepl-web/tree/grill">pyrepl-web grill</a>
-    (Pyodide 314). Copy the spike wheel into this directory before loading.
+    Full <code>usd-core</code> wheel (shared <code>libusd_ms.so</code> side
+    module) running under
+    <a href="https://github.com/chrizzFTD/pyrepl-web/tree/grill">pyrepl-web grill</a>
+    (Pyodide 314). Copy the <code>usd_core-*.whl</code> into this directory and
+    update the <code>packages=</code> filename below to match its version.
   </p>
 
+  <!--
+    `packages` installs the co-hosted wheel via micropip and is awaited BEFORE
+    the REPL/replay starts (unlike a `src` script, which pyrepl exec's
+    synchronously and cannot await an install). `src` then runs a silent
+    startup import, and `replay-src` types the guided demo into the REPL.
+  -->
   <py-repl
     theme="catppuccin-mocha"
-    repl-title="USD Tf (Pyodide 314)"
+    repl-title="USD Python (Pyodide 314)"
+    packages="./usd_core-26.8-cp314-cp314-pyemscripten_2026_0_wasm32.whl"
     src="./bootstrap.py"
-    replay-src="./test_tf.py"
+    replay-src="./usd_demo.py"
     no-buttons
   ></py-repl>
 </body>
