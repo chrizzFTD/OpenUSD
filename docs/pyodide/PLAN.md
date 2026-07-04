@@ -190,11 +190,25 @@ print("Cube size:", cube.GetSizeAttr().Get())
 - OpenUSD owns only USD-specific assets: wheel, bootstrap, demo script, HTML glue
 - No parallel `loadPyodide` boilerplate to maintain in this repo
 
-### PR-C — CI + hardening
+### PR-C — CI, size hardening, and PyPI release as `grill-usd-core`
 
-- GitHub Actions: `pyodide xbuildenv install 314.0.2 --force`, build, smoke tests
-- Document private wheel install via pyrepl-web `bootstrap.py` pattern
-- Optional: CI job that builds wheel and smoke-tests import in `pyodide venv`
+> **Detailed design & implementation plan:** see [`PR-C-PLAN.md`](./PR-C-PLAN.md).
+> Key decision: publish the wasm wheel to **PyPI as `grill-usd-core`** (the
+> testing package for the Pyodide/wasm build of `usd-core`, distinct from
+> Pixar's official `usd-core` which has no wasm support). PEP 783 makes the
+> `pyemscripten_2026_0_wasm32` tag PyPI-installable, so consumers can
+> `micropip.install("grill-usd-core")` / `<py-repl packages="grill-usd-core">`.
+
+- Publish `grill-usd-core` to PyPI (PEP 783 `pyemscripten_2026_0_wasm32`;
+  import name stays `pxr`) with complete metadata + `Environment :: WebAssembly
+  :: Emscripten` classifier
+- GitHub Actions: `pyodide xbuildenv install 314.0.2`, build → package →
+  `twine check` → Node + `pyodide venv` smoke tests → publish via PyPI Trusted
+  Publishing (TestPyPI first)
+- Size hardening deferred from PR-B: `-Oz`/`MinSizeRel` + `wasm-opt`/strip on
+  `libusd_ms.so`
+- Repoint the browser demo at `packages="grill-usd-core"` (keep the local-wheel
+  path for development)
 
 ## Toolchain setup
 
