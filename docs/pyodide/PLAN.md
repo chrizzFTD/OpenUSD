@@ -199,16 +199,54 @@ print("Cube size:", cube.GetSizeAttr().Get())
 > `pyemscripten_2026_0_wasm32` tag PyPI-installable, so consumers can
 > `micropip.install("grill-usd-core")` / `<py-repl packages="grill-usd-core">`.
 
-- Publish `grill-usd-core` to PyPI (PEP 783 `pyemscripten_2026_0_wasm32`;
-  import name stays `pxr`) with complete metadata + `Environment :: WebAssembly
-  :: Emscripten` classifier
-- GitHub Actions: `pyodide xbuildenv install 314.0.2`, build → package →
-  `twine check` → Node + `pyodide venv` smoke tests → publish via PyPI Trusted
-  Publishing (TestPyPI first)
-- Size hardening deferred from PR-B: `-Oz`/`MinSizeRel` + `wasm-opt`/strip on
-  `libusd_ms.so`
-- Repoint the browser demo at `packages="grill-usd-core"` (keep the local-wheel
-  path for development)
+- [x] `package_wheel.py --dist-name` (default `grill-usd-core`; import name
+  stays `pxr`) → `grill_usd_core-<ver>-…-pyemscripten_2026_0_wasm32.whl` with
+  the monolith in `grill_usd_core.libs/`; Node harness re-validated after the
+  rename (R1 gate)
+- [x] Complete PyPI metadata (`pypi_readme.md` long description, TOST-1.0
+  license + bundled `LICENSE.txt`, `Environment :: WebAssembly :: Emscripten`
+  classifier, project URLs) + `twine check --strict` in the packager
+- [x] `pyodide venv` pip-install smoke test (`test_pyodide_venv.sh`) alongside
+  the Node harness
+- [x] Size hardening deferred from PR-B: post-link `wasm-opt -Oz` + strip on
+  `libusd_ms.so` in the packager (~8% smaller monolith; a `MinSizeRel`/`-Oz`
+  *compile* was measured and is larger than `-O3` here, so `Release` stays
+  the default — see `build_spike.py --build-type`)
+- [x] GitHub Actions (`.github/workflows/pyodide-wheel.yml`): xbuildenv +
+  oneTBB caching, build → package → `twine check` → Node + `pyodide venv`
+  smoke tests → publish via PyPI Trusted Publishing (TestPyPI first)
+- [ ] Maintainer: claim `grill-usd-core` on TestPyPI/PyPI + configure Trusted
+  Publishing, then run the publish workflow (see PR-C-PLAN §4.4)
+- [x] Repoint the browser demo at `packages="grill-usd-core"` (keep the
+  local-wheel path for development)
+
+## Distribution
+
+The Pyodide wheel is distributed on **PyPI as
+[`grill-usd-core`](https://pypi.org/project/grill-usd-core/)** — an unofficial,
+experimental WebAssembly build of the `usd-core` module set (import name is
+still `pxr`). Consumption:
+
+```python
+import micropip
+await micropip.install("grill-usd-core")      # browser / Node (Pyodide 314)
+```
+
+```html
+<py-repl packages="grill-usd-core"></py-repl>  <!-- pyrepl-web grill -->
+```
+
+```bash
+pyodide venv .venv-pyodide                     # native PEP 783 install path
+.venv-pyodide/bin/pip install grill-usd-core
+```
+
+Wheels are built + published by `.github/workflows/pyodide-wheel.yml`
+(`workflow_dispatch` with `publish: testpypi|pypi`, or a `pyodide-v*` tag).
+Versions mirror USD (`26.8`), with `.postN` for re-publishes and `.devN` on
+TestPyPI (PyPI files are immutable). Local wheels remain fully supported for
+development (`packages="./grill_usd_core-*.whl"`, direct `micropip.install`
+URL, or a TestPyPI `index_urls`).
 
 ## Toolchain setup
 
