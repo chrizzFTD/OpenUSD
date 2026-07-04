@@ -223,12 +223,22 @@ these one-time account steps and the workflow dispatches need the maintainer:
 2. In the GitHub repo settings, create the `testpypi` and `pypi`
    **environments** (optionally with required reviewers to gate publishes).
 3. **TestPyPI dry-run**: run the *Pyodide wheel (grill-usd-core)* workflow
-   with `publish: testpypi` and `version: 26.8.dev1` (bump `.devN` per
+   with `publish: testpypi` and `version: 26.8.dev2` (bump `.devN` per
    iteration — (Test)PyPI files are immutable). Validate the published
    package end-to-end:
    `node build_scripts/pyodide/test_usd_import.mjs grill-usd-core
-   https://test.pypi.org/simple` (this index-resolution path is already
-   validated in-repo against a local PEP 503 index).
+   https://test.pypi.org/simple`.
+
+   > **Done for `26.8.dev1`** (2026-07-04, via a maintainer TestPyPI API
+   > token instead of the workflow):
+   > [test.pypi.org/project/grill-usd-core/26.8.dev1](https://test.pypi.org/project/grill-usd-core/26.8.dev1/)
+   > — validated with the Node harness resolving from
+   > `https://test.pypi.org/simple` (install + author + serialize
+   > round-trip) and a `pyodide venv` `pip install --index-url
+   > https://test.pypi.org/simple grill-usd-core==26.8.dev1`. The
+   > `grill-usd-core` name is now claimed on TestPyPI by the maintainer
+   > account, so the TestPyPI trusted publisher must be added on the
+   > *project* (Manage → Publishing), not as a pending publisher.
 4. **PyPI release**: dispatch with `publish: pypi` (no version override →
    `26.8` from `pxr.h`), or push a `pyodide-v*` tag. Re-publishes of the same
    USD version use the `post` input (`26.8.postN`).

@@ -215,8 +215,13 @@ print("Cube size:", cube.GetSizeAttr().Get())
 - [x] GitHub Actions (`.github/workflows/pyodide-wheel.yml`): xbuildenv +
   oneTBB caching, build → package → `twine check` → Node + `pyodide venv`
   smoke tests → publish via PyPI Trusted Publishing (TestPyPI first)
-- [ ] Maintainer: claim `grill-usd-core` on TestPyPI/PyPI + configure Trusted
-  Publishing, then run the publish workflow (see PR-C-PLAN §4.4)
+- [x] TestPyPI dry-run: `grill-usd-core==26.8.dev1` published to
+  [test.pypi.org](https://test.pypi.org/project/grill-usd-core/) and validated
+  end-to-end (Node harness `index_urls` install + `pyodide venv` pip install
+  from the TestPyPI index; metadata renders correctly)
+- [ ] Maintainer: configure Trusted Publishing (TestPyPI + PyPI) + the
+  `testpypi`/`pypi` GitHub environments, land the workflow on the default
+  branch, then run the PyPI publish workflow (see PR-C-PLAN §4.4)
 - [x] Repoint the browser demo at `packages="grill-usd-core"` (keep the
   local-wheel path for development)
 
