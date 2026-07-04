@@ -155,6 +155,51 @@ def run(cmd: list[str], *, cwd: pathlib.Path | None = None) -> None:
     subprocess.run([str(c) for c in cmd], cwd=cwd, check=True)
 
 
+def find_wasm_opt() -> pathlib.Path | None:
+    """Locate Binaryen's wasm-opt (PATH first, then the pyodide emsdk)."""
+    found = shutil.which("wasm-opt")
+    if found:
+        return pathlib.Path(found)
+    try:
+        emsdk_dir = subprocess.run(
+            ["pyodide", "config", "get", "emsdk_dir"],
+            check=True, capture_output=True, text=True,
+        ).stdout.strip().strip('"')
+    except subprocess.CalledProcessError:
+        return None
+    candidate = pathlib.Path(emsdk_dir) / "upstream" / "bin" / "wasm-opt"
+    return candidate if candidate.is_file() else None
+
+
+def wasm_opt_monolith(
+    monolith: pathlib.Path, out_dir: pathlib.Path, wasm_opt: pathlib.Path
+) -> pathlib.Path:
+    """Post-link size pass over libusd_ms.so (PR-C size hardening).
+
+    Runs wasm-opt -Oz + strip passes on a *copy* of the monolith (the inst/
+    tree stays pristine) and returns the directory to use as the auditwheel
+    --libdir. Binaryen preserves the dylink.0 section (mem info + exports)
+    that Pyodide's loader needs; the thin _*.so extensions are left untouched
+    so auditwheel's RUNTIME_PATH rewrite is unaffected. Any behavior change
+    is gated by the Node + pyodide venv smoke tests.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    optimized = out_dir / monolith.name
+    run([
+        wasm_opt, "-Oz",
+        "--strip-debug", "--strip-producers",
+        "--all-features",
+        monolith, "-o", optimized,
+    ])
+    before = monolith.stat().st_size
+    after = optimized.stat().st_size
+    print(
+        f"wasm-opt {monolith.name}: {before:,} -> {after:,} bytes "
+        f"({100.0 * (before - after) / before:.1f}% smaller)"
+    )
+    return out_dir
+
+
 def ensure_wheel_cli() -> None:
     """auditwheel-emscripten invokes the ``wheel`` CLI."""
     wheel_shim = pathlib.Path.home() / ".local" / "bin" / "wheel"
@@ -347,6 +392,11 @@ def main() -> None:
         help="skip the twine check metadata validation of the built wheel",
     )
     parser.add_argument(
+        "--no-wasm-opt",
+        action="store_true",
+        help="skip the wasm-opt -Oz/strip size pass over libusd_ms.so",
+    )
+    parser.add_argument(
         "--stage-dir",
         type=pathlib.Path,
         default=None,
@@ -365,12 +415,25 @@ def main() -> None:
     libdir, stage_dir = stage_wheel(
         inst=inst, stage_dir=stage_dir, version=version, dist_name=args.dist_name
     )
+    if not args.no_wasm_opt:
+        wasm_opt = find_wasm_opt()
+        if wasm_opt is None:
+            print(
+                "ERROR: wasm-opt not found (PATH or pyodide emsdk); "
+                "pass --no-wasm-opt to skip the size pass",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        libdir = wasm_opt_monolith(
+            libdir / "libusd_ms.so", stage_dir / "libs-opt", wasm_opt
+        )
     wheel = build_and_repair(
         stage_dir=stage_dir, libdir=libdir, output_dir=args.output_dir
     )
     if not args.skip_twine_check:
         twine_check(wheel)
-    print(f"\nRepaired {args.dist_name} wheel: {wheel}")
+    print(f"\nRepaired {args.dist_name} wheel: {wheel} "
+          f"({wheel.stat().st_size:,} bytes)")
 
 
 if __name__ == "__main__":

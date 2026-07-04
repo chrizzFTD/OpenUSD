@@ -262,6 +262,28 @@ smoke tests.
 Note the ceiling is fine for PyPI regardless: the per-file limit is 100 MB and
 we are well under it.
 
+### 6.1 As-implemented measurements
+
+Both levers were built and measured end-to-end (full monolith rebuilds, gated
+by the Node + `pyodide venv` smoke tests):
+
+| Build | `libusd_ms.so` | wheel (compressed) |
+|-------|---------------:|-------------------:|
+| PR-B parity: `-O3`, no post-link pass | 29,967,509 B | 11,905,169 B |
+| `MinSizeRel` (`-Oz`) compile + `wasm-opt -Oz` | 34,405,358 → 32,093,614 B | 15,344,457 B |
+| **Shipped: `-O3` + `wasm-opt -Oz` + strip** | **29,994,772 → 27,490,863 B (−8.3%)** | **11,790,256 B** |
+
+Counter-intuitively the `-Oz` *compile* is ~15% **larger** than `-O3` for this
+codebase (USD's heavily templated code shrinks more from `-O3`'s aggressive
+inlining + GVN than from `-Oz`'s size heuristics), so `Release` stays the
+default (`build_spike.py --build-type` keeps `MinSizeRel` selectable for
+re-measurement). The shipped win is the post-link `wasm-opt -Oz
+--strip-debug --strip-producers` pass in `package_wheel.py` (skippable via
+`--no-wasm-opt`): −8.3% on the uncompressed monolith the browser must
+instantiate (a second `wasm-opt` pass and strip-only were measured; both
+negligible). The compressed wheel only shrinks ~1% (wasm compresses well);
+transport compression (§6 item 5) remains the hosting-side lever.
+
 ---
 
 ## 7. CI — GitHub Actions
